@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
+import uploadRoutes from './routes/uploadRoutes';
 
 const app = express();
 const PORT = 5000;
@@ -12,6 +13,9 @@ app.use(express.json());
 app.get('/ping', (req: Request, res: Response) => {
   res.json({ message: 'pong' });
 });
+
+// Upload routes
+app.use('/api', uploadRoutes);
 
 // Start server
 app.listen(PORT, () => {
