@@ -1,26 +1,152 @@
 @import "tailwindcss";
 
+/* Tailwind v4 dark mode configuration */
+@theme {
+  --color-scheme: light dark;
+}
+
+/* Gemini 2025 Color Variables - Light Mode */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg-primary: #ffffff;
+  --bg-secondary: #fafafa;
+  --bg-gradient-start: #fafafa;
+  --bg-gradient-end: #f1f3f4;
+  --text-heading: #1f1f1f;
+  --text-body: #1f1f1f;
+  --text-subtle: #5f6368;
+  --text-muted: #9aa0a6;
+  --border-subtle: #e5e5e5;
+  --user-bubble: #f7f7f7;
+  --ai-bubble: #ffffff;
+  --ai-bubble-border: #e5e5e5;
+  --focus-ring: rgba(66, 133, 244, 0.2);
+  --accent-blue: #4285F4;
+  --shadow-soft: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-medium: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+}
+
+/* Gemini 2025 Color Variables - Dark Mode */
+.dark {
+  --bg-primary: #0e0e0f;
+  --bg-secondary: #121212;
+  --bg-gradient-start: #0e0e0f;
+  --bg-gradient-end: #121214;
+  --text-heading: #ededed;
+  --text-body: #c5c5c7;
+  --text-subtle: #8a8a8e;
+  --text-muted: #8a8a8e;
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --user-bubble: #222225;
+  --user-bubble-border: rgba(255, 255, 255, 0.08);
+  --ai-bubble: #1a1a1c;
+  --ai-bubble-border: rgba(255, 255, 255, 0.06);
+  --focus-ring: rgba(138, 180, 248, 0.25);
+  --accent-blue: #8ab4f8;
+  --shadow-soft: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-medium: 0 2px 4px 0 rgba(0, 0, 0, 0.4);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-body);
+  --font-sans: var(--font-google-sans), var(--font-inter), system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  transition: background-color 300ms ease, color 300ms ease, border-color 300ms ease;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-body);
+  font-family: var(--font-sans);
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar - Gemini 2025 style */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Gemini 2025 Animations */
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes subtleScale {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.01);
+  }
+}
+
+@keyframes blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(138, 180, 248, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(138, 180, 248, 0.1);
+  }
+}
+
+.animate-fade-slide-up {
+  animation: fadeSlideUp 0.15s ease-out;
+}
+
+.animate-subtle-hover:hover {
+  transform: scale(1.01);
+  transition: transform 0.2s ease-out;
+}
+
+.animate-blink {
+  animation: blink 1.4s infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2s ease-in-out infinite;
 }

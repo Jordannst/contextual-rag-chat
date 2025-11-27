@@ -1,64 +1,205 @@
-import Image from "next/image";
+'use client';
+
+import React, { useState, useRef, useEffect } from 'react';
+import Sidebar from '@/components/layout/Sidebar';
+import ChatContainer from '@/components/chat/ChatContainer';
+import ChatBubble from '@/components/chat/ChatBubble';
+import ChatInput from '@/components/chat/ChatInput';
+import TypingIndicator from '@/components/chat/TypingIndicator';
+import PromptCard from '@/components/ui/PromptCard';
+import UploadCard from '@/components/upload/UploadCard';
+
+interface Message {
+  id: string;
+  text: string;
+  isUser: boolean;
+  timestamp: Date;
+}
+
+const defaultPrompts = [
+  {
+    id: '1',
+    title: 'Plan a trip',
+    description: 'Plan a detailed itinerary for a weekend getaway',
+    icon: (
+      <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+      </svg>
+    ),
+  },
+  {
+    id: '2',
+    title: 'Write a story',
+    description: 'Create a short story about a magical adventure',
+    icon: (
+      <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+      </svg>
+    ),
+  },
+  {
+    id: '3',
+    title: 'Explain a concept',
+    description: 'Break down complex topics into simple explanations',
+    icon: (
+      <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  {
+    id: '4',
+    title: 'Brainstorm ideas',
+    description: 'Generate creative ideas for your next project',
+    icon: (
+      <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+      </svg>
+    ),
+  },
+];
 
 export default function Home() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isLoading]);
+
+  const handleSendMessage = async (text: string) => {
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      text,
+      isUser: true,
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setIsLoading(true);
+
+    // Simulasi response AI
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    const aiResponse: Message = {
+      id: (Date.now() + 1).toString(),
+      text: `I understand you're asking about "${text}". This is a simulated response. In a real implementation, this would connect to your RAG API to provide answers based on your uploaded documents.\n\n**Key Features:**\n- Semantic search within documents\n- Context-aware responses\n- Accurate answers based on your content\n\nFeel free to ask more specific questions!`,
+      isUser: false,
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, aiResponse]);
+    setIsLoading(false);
+  };
+
+  const handlePromptClick = (prompt: typeof defaultPrompts[0]) => {
+    handleSendMessage(prompt.title);
+  };
+
+  const handleNewChat = () => {
+    setMessages([]);
+  };
+
+  const handleFileUpload = async (file: File) => {
+    // Simulasi upload
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    
+    // Tambahkan pesan selamat datang
+    const welcomeMessage: Message = {
+      id: Date.now().toString(),
+      text: `Dokumen "${file.name}" berhasil diunggah! Anda sekarang dapat menanyakan sesuatu tentang dokumen ini.`,
+      isUser: false,
+      timestamp: new Date(),
+    };
+    setMessages([welcomeMessage]);
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+    <div className="min-h-screen bg-gradient-to-b from-neutral-950 to-neutral-900 flex transition-colors duration-300">
+      {/* Sidebar */}
+      <Sidebar 
+        items={[
+          {
+            id: 'new-chat',
+            label: 'New chat',
+            icon: (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            ),
+            onClick: handleNewChat,
+          },
+        ]}
+      />
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col ml-16">
+        {messages.length === 0 ? (
+          /* Hero Section - Gemini 2025 Style */
+          <div className="flex-1 flex items-center justify-center px-4 py-12">
+            <div className="w-full max-w-[900px] mx-auto">
+              <div className="text-center mb-12 animate-fade-slide-up">
+                <h1 className="text-5xl sm:text-6xl font-bold text-neutral-100 mb-4 leading-tight tracking-tight transition-colors duration-300">
+                  Hello again 👋
+                </h1>
+                <p className="text-xl sm:text-2xl text-neutral-400 font-normal transition-colors duration-300">
+                  What can I help you explore today?
+                </p>
+              </div>
+
+              {/* Upload Card */}
+              <div className="max-w-2xl mx-auto mb-8 animate-fade-slide-up" style={{ animationDelay: '0.1s' }}>
+                <UploadCard
+                  onFileUpload={handleFileUpload}
+                  isUploading={false}
+                />
+              </div>
+
+              {/* Prompt Cards Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl mx-auto animate-fade-slide-up" style={{ animationDelay: '0.2s' }}>
+                {defaultPrompts.map((prompt) => (
+                  <PromptCard
+                    key={prompt.id}
+                    title={prompt.title}
+                    description={prompt.description}
+                    icon={prompt.icon}
+                    onClick={() => handlePromptClick(prompt)}
+                  />
+                ))}
+              </div>
+
+              {/* Additional Info */}
+              <div className="mt-12 text-center animate-fade-slide-up" style={{ animationDelay: '0.3s' }}>
+                <p className="text-sm text-neutral-400 transition-colors duration-300">
+                  You can start a conversation or pick a suggestion
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Chat Interface */
+          <div className="flex-1 flex flex-col h-screen overflow-hidden bg-neutral-950 transition-colors duration-300">
+            <ChatContainer>
+              {messages.map((message) => (
+                <ChatBubble
+                  key={message.id}
+                  message={message.text}
+                  isUser={message.isUser}
+                  timestamp={message.timestamp}
+                />
+              ))}
+              {isLoading && <TypingIndicator />}
+              <div ref={chatEndRef} />
+            </ChatContainer>
+
+            <ChatInput onSend={handleSendMessage} isLoading={isLoading} />
+          </div>
+        )}
       </main>
     </div>
   );
