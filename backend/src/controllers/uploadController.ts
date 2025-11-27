@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { extractTextFromFile } from '../utils/documentExtractor';
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../../uploads');
@@ -49,7 +50,7 @@ const upload = multer({
 export const uploadMiddleware = upload.single('document');
 
 // Upload controller
-export const uploadFile = (req: Request, res: Response) => {
+export const uploadFile = async (req: Request, res: Response) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -58,12 +59,19 @@ export const uploadFile = (req: Request, res: Response) => {
     const fileName = req.file.filename;
     const filePath = req.file.path;
 
+    // Extract text from file
+    const text = await extractTextFromFile(filePath);
+
     res.json({
       fileName,
       filePath,
+      text,
     });
   } catch (error) {
-    res.status(500).json({ error: 'Error uploading file' });
+    res.status(500).json({ 
+      error: 'Error uploading or processing file',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 };
 
