@@ -84,13 +84,23 @@ export default function Home() {
     setIsLoading(true);
 
     try {
-      // Call chat API
+      // Convert messages to history format for backend
+      // Include all previous messages (before the current user message)
+      const history = messages.map((msg) => ({
+        role: msg.isUser ? 'user' : 'model',
+        content: msg.text,
+      }));
+
+      // Call chat API with history
       const response = await fetch('http://localhost:5000/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query: text }),
+        body: JSON.stringify({
+          question: text,
+          history: history,
+        }),
       });
 
       if (!response.ok) {
