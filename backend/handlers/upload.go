@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"backend/db"
 	"backend/utils"
 )
 
@@ -57,10 +58,60 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
+	// Split text into chunks
+	chunks := utils.SplitText(text, 1000, 200)
+	if len(chunks) == 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "No text chunks generated from file",
+		})
+		return
+	}
+
+	// Process each chunk: generate embedding and save to database
+	var savedChunks int
+	var lastError error
+
+	for _, chunk := range chunks {
+		// Generate embedding for this chunk
+		embedding, err := utils.GenerateEmbedding(chunk)
+		if err != nil {
+			lastError = err
+			continue // Skip this chunk and continue with next
+		}
+
+		// Insert chunk with embedding to database
+		err = db.InsertDocument(chunk, embedding, file.Filename)
+		if err != nil {
+			lastError = err
+			continue // Skip this chunk and continue with next
+		}
+
+		savedChunks++
+	}
+
+	// Check if at least one chunk was saved
+	if savedChunks == 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to save any chunks to database",
+			"message": lastError.Error(),
+		})
+		return
+	}
+
+	// Generate preview text (first 200 characters)
+	previewText := text
+	if len(text) > 200 {
+		previewText = text[:200] + "..."
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"fileName": file.Filename,
-		"filePath": filePath,
-		"text":     text,
+		"fileName":    file.Filename,
+		"filePath":    filePath,
+		"text":        text,
+		"message":     fmt.Sprintf("File berhasil diupload, divektorisasi, dan disimpan ke database (%d chunks)", savedChunks),
+		"previewText": previewText,
+		"chunksCount": savedChunks,
+		"totalChunks": len(chunks),
 	})
 }
 
