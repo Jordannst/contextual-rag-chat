@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 
+	"backend/db"
 	"backend/routes"
 
 	"github.com/gin-contrib/cors"
@@ -16,6 +17,12 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
 	}
+
+	// Initialize database connection
+	if err := db.InitDB(); err != nil {
+		log.Fatal("Failed to initialize database:", err)
+	}
+	defer db.CloseDB()
 
 	// Setup router
 	r := gin.Default()
@@ -34,6 +41,9 @@ func main() {
 
 	// Upload routes
 	routes.UploadRoutes(r)
+
+	// Chat routes
+	routes.ChatRoutes(r)
 
 	// Start server
 	port := os.Getenv("PORT")

@@ -13,3 +13,10 @@ func UploadRoutes(r *gin.Engine) {
 	}
 }
 
+func ChatRoutes(r *gin.Engine) {
+	api := r.Group("/api")
+	{
+		api.POST("/chat", handlers.ChatHandler)
+	}
+}
+
