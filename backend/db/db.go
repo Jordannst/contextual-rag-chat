@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/pgvector/pgvector-go"
 )
 
 var Pool *pgxpool.Pool
@@ -53,5 +54,25 @@ func CloseDB() {
 	if Pool != nil {
 		Pool.Close()
 	}
+}
+
+// InsertDocument inserts a document with its embedding vector into the database
+func InsertDocument(content string, embedding []float32) error {
+	if Pool == nil {
+		return fmt.Errorf("database pool is not initialized")
+	}
+
+	ctx := context.Background()
+
+	// Convert []float32 to pgvector.Vector
+	vector := pgvector.NewVector(embedding)
+
+	// Execute INSERT query
+	_, err := Pool.Exec(ctx, "INSERT INTO documents (content, embedding) VALUES ($1, $2)", content, vector)
+	if err != nil {
+		return fmt.Errorf("failed to insert document: %w", err)
+	}
+
+	return nil
 }
 
