@@ -5,11 +5,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"backend/db"
+	"backend/models"
 	"backend/utils"
 )
 
 type ChatRequest struct {
-	Query string `json:"query" binding:"required"`
+	Question string             `json:"question" binding:"required"`
+	History  []models.ChatMessage `json:"history"`
 }
 
 type ChatResponse struct {
@@ -22,13 +24,13 @@ func ChatHandler(c *gin.Context) {
 	var req ChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid request. 'query' field is required",
+			"error": "Invalid request. 'question' field is required",
 		})
 		return
 	}
 
 	// Generate embedding for user query
-	queryEmbedding, err := utils.GenerateEmbedding(req.Query)
+	queryEmbedding, err := utils.GenerateEmbedding(req.Question)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to generate query embedding",
@@ -55,8 +57,8 @@ func ChatHandler(c *gin.Context) {
 		sourceIDs = append(sourceIDs, doc.ID)
 	}
 
-	// Generate chat response with RAG context
-	response, err := utils.GenerateChatResponse(req.Query, contextDocs)
+	// Generate chat response with RAG context and history
+	response, err := utils.GenerateChatResponse(req.Question, contextDocs, req.History)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to generate chat response",
