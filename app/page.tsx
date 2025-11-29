@@ -8,6 +8,7 @@ import ChatInput from '@/components/chat/ChatInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
 import UploadCard from '@/components/upload/UploadCard';
 import DocumentList from '@/components/upload/DocumentList';
+import PDFViewerModal from '@/components/ui/PDFViewerModal';
 
 interface Message {
   id: string;
@@ -30,6 +31,9 @@ export default function Home() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]); // Files selected but not yet uploaded
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [documentListRefreshTrigger, setDocumentListRefreshTrigger] = useState(0);
+  const [selectedDocument, setSelectedDocument] = useState<string | null>(null); // PDF file to view in modal
+  const [suggestions, setSuggestions] = useState<string[]>([]); // Question suggestions
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
 
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -38,6 +42,42 @@ export default function Home() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading]);
+
+  // Fetch question suggestions when no messages and not uploading
+  useEffect(() => {
+    // Clear suggestions when user starts chatting
+    if (messages.length > 0) {
+      setSuggestions([]);
+      return;
+    }
+
+    // Don't fetch if uploading or already loading
+    if (isUploading || isLoadingSuggestions) {
+      return;
+    }
+
+    // Fetch suggestions
+    const fetchSuggestions = async () => {
+      setIsLoadingSuggestions(true);
+      try {
+        const response = await fetch('http://localhost:5000/api/chat/suggestions');
+        if (response.ok) {
+          const data = await response.json();
+          setSuggestions(data.questions || []);
+        } else {
+          console.error('Failed to fetch suggestions');
+          setSuggestions([]);
+        }
+      } catch (error) {
+        console.error('Error fetching suggestions:', error);
+        setSuggestions([]);
+      } finally {
+        setIsLoadingSuggestions(false);
+      }
+    };
+
+    fetchSuggestions();
+  }, [messages.length, isUploading]);
 
   const handleSendMessage = async (text: string) => {
     const userMessage: Message = {
@@ -401,6 +441,9 @@ export default function Home() {
     // Refresh document list after all uploads complete
     setDocumentListRefreshTrigger((prev) => prev + 1);
 
+    // Refresh suggestions after upload (new documents available)
+    setSuggestions([]); // Clear to trigger refetch
+
     // Clear selected files
     setSelectedFiles([]);
 
@@ -459,6 +502,7 @@ export default function Home() {
                     timestamp={message.timestamp}
                     attachment={message.attachment}
                     sources={message.sources}
+                    onViewDocument={(fileName) => setSelectedDocument(fileName)}
                   />
                 ))}
               {/* Show typing indicator only if loading and no AI message bubble is shown */}
@@ -497,12 +541,54 @@ export default function Home() {
                 />
               </div>
 
+              {/* Question Suggestions */}
+              {suggestions.length > 0 && (
+                <div className="max-w-4xl mx-auto mb-8 animate-fade-slide-up" style={{ animationDelay: '0.15s' }}>
+                  <h2 className="text-lg font-semibold text-neutral-300 mb-4 text-center">
+                    Suggested Questions
+                  </h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {suggestions.map((question, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleSendMessage(question)}
+                        disabled={isLoading}
+                        className="text-left px-5 py-4 bg-neutral-800/50 hover:bg-neutral-800 border border-neutral-700 hover:border-neutral-600 rounded-xl transition-all duration-200 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed group"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-blue-600/20 flex items-center justify-center mt-0.5 group-hover:bg-blue-600/30 transition-colors">
+                            <svg
+                              className="w-4 h-4 text-blue-400"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+                              />
+                            </svg>
+                          </div>
+                          <p className="text-neutral-200 text-sm leading-relaxed flex-1">
+                            {question}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Document List */}
-              <div className="max-w-2xl mx-auto animate-fade-slide-up" style={{ animationDelay: '0.15s' }}>
+              <div className="max-w-2xl mx-auto animate-fade-slide-up" style={{ animationDelay: '0.2s' }}>
                 <DocumentList 
                   onDocumentDeleted={() => {
                     // Optionally refresh or show notification when document is deleted
                     console.log('Document deleted, list refreshed');
+                    // Refresh suggestions when document is deleted
+                    setSuggestions([]);
                   }}
                   refreshTrigger={documentListRefreshTrigger}
                 />
@@ -510,6 +596,13 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {/* PDF Viewer Modal */}
+        <PDFViewerModal
+          isOpen={selectedDocument !== null}
+          onClose={() => setSelectedDocument(null)}
+          fileName={selectedDocument}
+        />
       </main>
     </div>
   );

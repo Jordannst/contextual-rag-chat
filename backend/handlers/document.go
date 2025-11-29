@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"backend/db"
@@ -194,5 +197,102 @@ func SyncDocumentsHandler(c *gin.Context) {
 		"deleted_files": deletedFiles,
 		"added_files":   addedFiles,
 	})
+}
+
+// GetFileHandler serves a file from uploads folder based on source_file name
+// This handler searches for files that match the source_file name pattern
+// (since files are stored with timestamp: filename-timestamp.pdf)
+func GetFileHandler(c *gin.Context) {
+	sourceFileName := c.Param("filename")
+	if sourceFileName == "" {
+		log.Printf("[Files] ERROR: filename parameter is empty\n")
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Filename parameter is required",
+		})
+		return
+	}
+
+	// Decode URL-encoded filename
+	decodedFileName, err := url.PathUnescape(sourceFileName)
+	if err == nil {
+		sourceFileName = decodedFileName
+	}
+
+	log.Printf("[Files] Requesting file: %s\n", sourceFileName)
+
+	uploadsDir := "uploads"
+	
+	// Get file extension from source filename
+	ext := filepath.Ext(sourceFileName)
+	nameWithoutExt := strings.TrimSuffix(sourceFileName, ext)
+
+	// Search for files in uploads directory that match the pattern
+	// Pattern: {nameWithoutExt}-{timestamp}{ext}
+	files, err := os.ReadDir(uploadsDir)
+	if err != nil {
+		log.Printf("[Files] ERROR reading uploads directory: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to read uploads directory",
+		})
+		return
+	}
+
+	// Find file that matches the source_file name pattern
+	var foundFile string
+	patternPrefix := nameWithoutExt + "-"
+	
+	log.Printf("[Files] Searching for file with pattern: %s*%s\n", patternPrefix, ext)
+	log.Printf("[Files] Source filename: %s\n", sourceFileName)
+	log.Printf("[Files] Name without ext: %s\n", nameWithoutExt)
+	
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+
+		fileName := file.Name()
+		
+		// Primary match: file starts with nameWithoutExt + "-" and ends with ext
+		// Example: "JUDUL_ MANUAL OPERASIONAL & KODE ETIK SISTEM RAG v1-1764420967383647600.pdf"
+		// matches "JUDUL_ MANUAL OPERASIONAL & KODE ETIK SISTEM RAG v1.pdf"
+		if strings.HasPrefix(fileName, patternPrefix) && strings.HasSuffix(fileName, ext) {
+			foundFile = fileName
+			log.Printf("[Files] MATCH FOUND (primary): %s\n", fileName)
+			break
+		}
+		
+		// Fallback: check if file contains nameWithoutExt (for cases with different encoding)
+		// Remove special characters for comparison
+		normalizedFileName := strings.ToLower(strings.ReplaceAll(fileName, " ", ""))
+		normalizedSourceName := strings.ToLower(strings.ReplaceAll(nameWithoutExt, " ", ""))
+		if strings.Contains(normalizedFileName, normalizedSourceName) && strings.HasSuffix(fileName, ext) {
+			// Additional check: make sure it's not already matched
+			if foundFile == "" {
+				foundFile = fileName
+				log.Printf("[Files] MATCH FOUND (fallback): %s\n", fileName)
+			}
+		}
+	}
+
+	if foundFile == "" {
+		log.Printf("[Files] File not found for source: %s (pattern: %s*%s)\n", sourceFileName, patternPrefix, ext)
+		log.Printf("[Files] Available files:\n")
+		for _, file := range files {
+			if !file.IsDir() {
+				log.Printf("[Files]   - %s\n", file.Name())
+			}
+		}
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "File not found",
+			"message": fmt.Sprintf("No file found matching pattern: %s*%s", patternPrefix, ext),
+		})
+		return
+	}
+
+	filePath := filepath.Join(uploadsDir, foundFile)
+	log.Printf("[Files] Serving file: %s (source: %s)\n", foundFile, sourceFileName)
+
+	// Serve the file
+	c.File(filePath)
 }
 

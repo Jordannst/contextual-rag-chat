@@ -12,6 +12,7 @@ interface ChatBubbleProps {
     fileType: string;
   };
   sources?: string[];
+  onViewDocument?: (fileName: string) => void;
 }
 
 // Helper function to process message and replace citations with markdown code spans
@@ -64,7 +65,7 @@ const BookIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-export default function ChatBubble({ message, isUser, timestamp, attachment, sources }: ChatBubbleProps) {
+export default function ChatBubble({ message, isUser, timestamp, attachment, sources, onViewDocument }: ChatBubbleProps) {
   // If attachment exists, render File Card instead of text
   if (attachment) {
     return (
@@ -160,8 +161,31 @@ export default function ChatBubble({ message, isUser, timestamp, attachment, sou
                     const text = String(children);
                     if (text.startsWith('CITATION:')) {
                       const fileName = text.replace('CITATION:', '');
+                      // Handle multiple files separated by comma
+                      const fileNames = fileName.split(',').map(f => f.trim());
+                      
                       return (
-                        <span className="text-blue-400 font-medium">({fileName})</span>
+                        <span className="text-blue-400 font-medium">
+                          ({fileNames.map((file, index) => (
+                            <React.Fragment key={index}>
+                              {onViewDocument ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    onViewDocument(file);
+                                  }}
+                                  className="text-blue-400 hover:text-blue-300 hover:underline cursor-pointer transition-colors"
+                                  title={`View ${file}`}
+                                >
+                                  {file}
+                                </button>
+                              ) : (
+                                <span>{file}</span>
+                              )}
+                              {index < fileNames.length - 1 && ', '}
+                            </React.Fragment>
+                          ))})
+                        </span>
                       );
                     }
                     // Regular code block
@@ -205,12 +229,14 @@ export default function ChatBubble({ message, isUser, timestamp, attachment, sou
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {sources.map((source, index) => (
-                    <span
+                    <button
                       key={index}
-                      className="inline-flex items-center px-2.5 py-1 rounded-lg bg-neutral-800 border border-neutral-700 text-[12px] text-neutral-300 hover:bg-neutral-750 transition-colors"
+                      onClick={() => onViewDocument?.(source)}
+                      className="inline-flex items-center px-2.5 py-1 rounded-lg bg-neutral-800 border border-neutral-700 text-[12px] text-neutral-300 hover:bg-neutral-700 hover:border-neutral-600 transition-colors cursor-pointer"
+                      title={`View ${source}`}
                     >
                       {source}
-                    </span>
+                    </button>
                   ))}
                 </div>
               </div>

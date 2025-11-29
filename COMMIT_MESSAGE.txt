@@ -1,0 +1,16 @@
+feat: tambah PDF Preview dan Smart Empty State dengan suggested questions
+
+PDF Preview:
+- Handler GetFileHandler untuk serve file berdasarkan source_file name
+- Pattern matching untuk file dengan timestamp (filename-timestamp.pdf)
+- PDFViewerModal component dengan full-screen iframe
+- Citations dan references menjadi clickable untuk preview PDF
+
+Smart Empty State:
+- GenerateQuestionSuggestions() menggunakan Gemini AI
+- GetRandomContext() untuk ambil random document chunks
+- GET /api/chat/suggestions endpoint
+- Suggestion cards di empty state (auto-fetch saat messages.length === 0)
+
+Manfaat: User bisa preview PDF langsung di aplikasi dan mendapat ide pertanyaan dari AI
+

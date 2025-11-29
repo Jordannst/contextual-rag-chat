@@ -64,7 +64,9 @@ func main() {
 	// Chat routes
 	routes.ChatRoutes(r)
 
-	// Document management routes
+	// Document management routes (includes file handler)
+	// GetFileHandler handles file serving with pattern matching for timestamped filenames
+	// Files can be accessed via: http://localhost:5000/api/files/filename.pdf
 	routes.DocumentRoutes(r)
 
 	// Start server

@@ -306,3 +306,53 @@ func DeleteDocument(fileName string) error {
 	return nil
 }
 
+// GetRandomContext retrieves random document chunks for generating question suggestions
+// Returns a slice of content strings from random documents
+func GetRandomContext(limit int) ([]string, error) {
+	if Pool == nil {
+		return nil, fmt.Errorf("database pool is not initialized")
+	}
+
+	if limit <= 0 {
+		limit = 5 // Default limit
+	}
+
+	ctx := context.Background()
+
+	// Query to get random document chunks
+	// ORDER BY RANDOM() is PostgreSQL-specific for random ordering
+	query := `
+		SELECT content
+		FROM documents
+		WHERE content IS NOT NULL AND content != ''
+		ORDER BY RANDOM()
+		LIMIT $1
+	`
+
+	rows, err := Pool.Query(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query random context: %w", err)
+	}
+	defer rows.Close()
+
+	var contexts []string
+	for rows.Next() {
+		var content string
+		if err := rows.Scan(&content); err != nil {
+			return nil, fmt.Errorf("failed to scan content: %w", err)
+		}
+		contexts = append(contexts, content)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating contexts: %w", err)
+	}
+
+	// Return empty slice if no documents found (not an error)
+	if len(contexts) == 0 {
+		return []string{}, nil
+	}
+
+	return contexts, nil
+}
+
