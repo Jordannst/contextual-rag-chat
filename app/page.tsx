@@ -34,6 +34,7 @@ export default function Home() {
   const [selectedDocument, setSelectedDocument] = useState<string | null>(null); // PDF file to view in modal
   const [suggestions, setSuggestions] = useState<string[]>([]); // Question suggestions
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [availableDocuments, setAvailableDocuments] = useState<string[]>([]); // List of available documents for filtering
 
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -79,7 +80,27 @@ export default function Home() {
     fetchSuggestions();
   }, [messages.length, isUploading]);
 
-  const handleSendMessage = async (text: string) => {
+  // Fetch available documents for filter
+  useEffect(() => {
+    const fetchDocuments = async () => {
+      try {
+        const response = await fetch('http://localhost:5000/api/documents');
+        if (response.ok) {
+          const data = await response.json();
+          setAvailableDocuments(data.documents || []);
+        }
+      } catch (error) {
+        console.error('Error fetching documents for filter:', error);
+      }
+    };
+
+    fetchDocuments();
+    // Refresh when document list changes
+    const interval = setInterval(fetchDocuments, 5000); // Refresh every 5 seconds
+    return () => clearInterval(interval);
+  }, [documentListRefreshTrigger]);
+
+  const handleSendMessage = async (text: string, selectedFiles?: string[]) => {
     const userMessage: Message = {
       id: Date.now().toString(),
       text,
@@ -110,15 +131,26 @@ export default function Home() {
       }));
 
       // Call chat API with streaming
+      const requestBody: {
+        question: string;
+        history: Array<{ role: string; content: string }>;
+        selectedFiles?: string[];
+      } = {
+        question: text,
+        history: history,
+      };
+
+      // Add selectedFiles only if provided (not empty)
+      if (selectedFiles && selectedFiles.length > 0) {
+        requestBody.selectedFiles = selectedFiles;
+      }
+
       const response = await fetch('http://localhost:5000/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          question: text,
-          history: history,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -514,7 +546,11 @@ export default function Home() {
               <div ref={chatEndRef} />
             </ChatContainer>
 
-            <ChatInput onSend={handleSendMessage} isLoading={isLoading} />
+            <ChatInput 
+              onSend={handleSendMessage} 
+              isLoading={isLoading}
+              availableDocuments={availableDocuments}
+            />
           </div>
         ) : (
           /* Hero Section - Gemini 2025 Style */

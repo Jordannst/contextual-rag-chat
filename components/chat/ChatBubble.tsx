@@ -66,6 +66,29 @@ const BookIcon = ({ className }: { className?: string }) => (
 );
 
 export default function ChatBubble({ message, isUser, timestamp, attachment, sources, onViewDocument }: ChatBubbleProps) {
+  // Filter sources to only include those that are actually mentioned in the message content
+  // This prevents showing References section for small talk responses without citations
+  const getUsedSources = (): string[] => {
+    if (!sources || sources.length === 0) {
+      return [];
+    }
+
+    // Check if each source file name is mentioned in the message content
+    // Sources can appear in format: (filename.pdf) or (file1.pdf, file2.pdf)
+    return sources.filter(source => {
+      // Check if source appears in parentheses (citation format)
+      // Pattern: (filename.pdf) or (file1.pdf, filename.pdf, file2.pdf)
+      const inParentheses = message.includes(`(${source})`) || 
+                           message.includes(`(${source},`) || 
+                           message.includes(`, ${source})`) ||
+                           message.includes(`, ${source},`);
+      
+      return inParentheses;
+    });
+  };
+
+  const usedSources = getUsedSources();
+
   // If attachment exists, render File Card instead of text
   if (attachment) {
     return (
@@ -218,8 +241,8 @@ export default function ChatBubble({ message, isUser, timestamp, attachment, sou
               </ReactMarkdown>
             </div>
             
-            {/* Sources Section - Only show for AI messages with sources */}
-            {sources && sources.length > 0 && (
+            {/* Sources Section - Only show for AI messages with sources that are actually cited in the message */}
+            {usedSources.length > 0 && (
               <div className="mt-4 pt-4 border-t border-neutral-700">
                 <div className="flex items-center gap-2 mb-2">
                   <BookIcon className="w-4 h-4 text-neutral-400" />
@@ -228,7 +251,7 @@ export default function ChatBubble({ message, isUser, timestamp, attachment, sou
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {sources.map((source, index) => (
+                  {usedSources.map((source, index) => (
                     <button
                       key={index}
                       onClick={() => onViewDocument?.(source)}

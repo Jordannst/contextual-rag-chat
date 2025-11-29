@@ -16,8 +16,9 @@ import (
 )
 
 type ChatRequest struct {
-	Question string             `json:"question" binding:"required"`
-	History  []models.ChatMessage `json:"history"`
+	Question      string             `json:"question" binding:"required"`
+	History       []models.ChatMessage `json:"history"`
+	SelectedFiles []string            `json:"selectedFiles,omitempty"` // Optional: filter by specific files
 }
 
 type ChatResponse struct {
@@ -40,9 +41,25 @@ func ChatHandler(c *gin.Context) {
 	}
 	log.Printf("[Chat] Step 1: Request diterima - Question: %s, History length: %d\n", req.Question, len(req.History))
 
-	// Step 2: Generate embedding for user query
+	// Step 1.5: Rewrite query if there's history (for better RAG accuracy on follow-up questions)
+	var rewrittenQuery string
+	var err error
+	if len(req.History) > 0 {
+		log.Printf("[Chat] Step 1.5: Rewriting query with context from history...\n")
+		rewrittenQuery, err = utils.RewriteQuery(req.History, req.Question)
+		if err != nil {
+			log.Printf("[Chat] WARNING: Query rewriting failed: %v. Using original query.\n", err)
+			rewrittenQuery = req.Question // Fallback to original
+		}
+		log.Printf("[Chat] Original: %s | Rewritten: %s\n", req.Question, rewrittenQuery)
+	} else {
+		rewrittenQuery = req.Question // No history, no need to rewrite
+		log.Printf("[Chat] Step 1.5: No history, using original query\n")
+	}
+
+	// Step 2: Generate embedding for rewritten query
 	log.Printf("[Chat] Step 2: Generating embedding for query...\n")
-	queryEmbedding, err := utils.GenerateEmbedding(req.Question)
+	queryEmbedding, err := utils.GenerateEmbedding(rewrittenQuery)
 	if err != nil {
 		log.Printf("[Chat] ERROR DI STEP 2 (Generate Embedding): %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -59,7 +76,15 @@ func ChatHandler(c *gin.Context) {
 	limit := 3
 	vectorWeight := 0.7 // 70% vector, 30% text
 	
-	similarDocs, err := db.SearchDocuments(queryEmbedding, req.Question, limit, vectorWeight)
+	// Get file filters from request (if any)
+	fileFilters := req.SelectedFiles
+	if len(fileFilters) > 0 {
+		log.Printf("[Chat] Step 3: Filtering by files: %v\n", fileFilters)
+	} else {
+		log.Printf("[Chat] Step 3: No file filter - searching all documents\n")
+	}
+	
+	similarDocs, err := db.SearchDocuments(queryEmbedding, rewrittenQuery, limit, vectorWeight, fileFilters)
 	if err != nil {
 		log.Printf("[Chat] ERROR DI STEP 3 (Search Documents): %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -71,9 +96,9 @@ func ChatHandler(c *gin.Context) {
 	log.Printf("[Chat] Step 3: Hybrid Search menemukan: %d dokumen\n", len(similarDocs))
 	
 	// Fallback Strategy: Jika hybrid search tidak menemukan hasil, fallback ke vector-only
-	if len(similarDocs) == 0 && req.Question != "" {
+	if len(similarDocs) == 0 && rewrittenQuery != "" {
 		log.Printf("[Chat] Step 3: WARNING - Hybrid search yielded 0 results, falling back to vector-only search.\n")
-		similarDocs, err = db.SearchSimilarDocuments(queryEmbedding, limit)
+		similarDocs, err = db.SearchSimilarDocuments(queryEmbedding, limit, fileFilters)
 		if err != nil {
 			log.Printf("[Chat] ERROR DI STEP 3 (Fallback Vector Search): %v\n", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -158,8 +183,9 @@ func ChatHandler(c *gin.Context) {
 	c.Writer.Flush()
 
 	// Step 6: Get streaming iterator
+	// Use rewritten query for better context understanding
 	log.Printf("[Chat] Step 6: Starting streaming response...\n")
-	iter, err := utils.StreamChatResponse(req.Question, contextDocs, req.History)
+	iter, err := utils.StreamChatResponse(rewrittenQuery, contextDocs, req.History)
 	if err != nil {
 		log.Printf("[Chat] ERROR DI STEP 6 (Stream Chat Response): %v\n", err)
 		// Send error event

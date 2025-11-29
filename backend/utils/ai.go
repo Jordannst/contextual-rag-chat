@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"backend/models"
+
 	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
 )
@@ -157,5 +159,86 @@ Contoh format output:
 		"Bisa jelaskan lebih detail tentang isi dokumen?",
 		"Apa saja poin penting yang perlu diketahui?",
 	}, nil
+}
+
+// RewriteQuery rewrites an ambiguous follow-up question into a standalone, complete query
+// using conversation history for context. This improves RAG accuracy for follow-up questions.
+func RewriteQuery(history []models.ChatMessage, currentQuery string) (string, error) {
+	// If no history, return original query (no need to rewrite)
+	if len(history) == 0 {
+		return currentQuery, nil
+	}
+
+	// Get API key from environment variable
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	if apiKey == "" {
+		return currentQuery, fmt.Errorf("GEMINI_API_KEY is not set in environment variables")
+	}
+
+	// Initialize Gemini client
+	ctx := context.Background()
+	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	if err != nil {
+		return currentQuery, fmt.Errorf("failed to create Gemini client: %w", err)
+	}
+	defer client.Close()
+
+	// Get the generative model (using Flash for speed)
+	model := client.GenerativeModel("gemini-2.0-flash")
+
+	// Build conversation history text
+	historyText := ""
+	for _, msg := range history {
+		if msg.Role == "user" {
+			historyText += fmt.Sprintf("User: %s\n", msg.Content)
+		} else if msg.Role == "model" {
+			historyText += fmt.Sprintf("Model: %s\n", msg.Content)
+		}
+	}
+
+	// Build prompt for query rewriting
+	prompt := fmt.Sprintf(`Diberikan riwayat percakapan berikut dan pertanyaan terbaru dari user, tulis ulang (rewrite) pertanyaan terbaru agar menjadi kalimat lengkap, berdiri sendiri, dan tidak ambigu. 
+
+Jangan menjawab pertanyaannya, hanya tulis ulang pertanyaannya menjadi pertanyaan yang lengkap dan jelas.
+
+Riwayat Percakapan:
+%s
+
+Pertanyaan User Terbaru: %s
+
+Standalone Query (tulis ulang pertanyaan menjadi lengkap dan jelas):`, historyText, currentQuery)
+
+	// Generate response
+	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	if err != nil {
+		// If rewriting fails, return original query as fallback
+		return currentQuery, fmt.Errorf("failed to rewrite query: %w", err)
+	}
+
+	// Extract text from response
+	if resp.Candidates == nil || len(resp.Candidates) == 0 {
+		return currentQuery, fmt.Errorf("no response candidates for query rewriting")
+	}
+
+	if resp.Candidates[0].Content == nil || len(resp.Candidates[0].Content.Parts) == 0 {
+		return currentQuery, fmt.Errorf("empty response content for query rewriting")
+	}
+
+	// Get text from the first part
+	var responseText strings.Builder
+	for _, part := range resp.Candidates[0].Content.Parts {
+		if textPart, ok := part.(genai.Text); ok {
+			responseText.WriteString(string(textPart))
+		}
+	}
+
+	rewrittenQuery := strings.TrimSpace(responseText.String())
+	
+	// If rewritten query is empty, return original
+	if rewrittenQuery == "" {
+		return currentQuery, nil
+	}
+
+	return rewrittenQuery, nil
 }
 

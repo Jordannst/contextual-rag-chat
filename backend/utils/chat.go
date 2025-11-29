@@ -58,32 +58,34 @@ func GenerateChatResponse(userQuery string, contextDocs []string, history []mode
 	}
 
 	// Build the prompt with history, context, and current question
-	prompt := "Anda adalah asisten AI yang menjawab berdasarkan dokumen yang diberikan.\n\n"
-	prompt += "PENTING - ATURAN CITATION:\n"
-	prompt += "Setiap kali Anda memberikan fakta atau penjelasan, Anda WAJIB menyertakan nama dokumen sumbernya di akhir kalimat atau paragraf dalam tanda kurung.\n"
-	prompt += "Contoh format citation: '(nama_file.pdf)' atau '(file_lain.txt)'.\n"
-	prompt += "Gunakan nama file persis seperti yang tertera di label [Document: ...] di konteks dokumen di atas.\n"
-	prompt += "Jika informasi berasal dari gabungan beberapa file, sebutkan semuanya, contoh: '(file1.pdf, file2.txt)'.\n"
-	prompt += "Jangan membuat nama file sendiri, gunakan nama file yang ada di label [Document: ...].\n"
-	prompt += "\nATURAN ANTI-REPETISI (SANGAT PENTING):\n"
-	prompt += "JANGAN PERNAH mengulang sitasi yang sama di setiap kalimat secara berurutan.\n"
-	prompt += "Jika beberapa kalimat atau satu paragraf penuh berasal dari dokumen yang SAMA, letakkan sitasi HANYA SATU KALI di akhir kalimat terakhir atau akhir paragraf tersebut.\n"
-	prompt += "HANYA gunakan sitasi per kalimat jika kalimat-kalimat tersebut berasal dari dokumen yang BERBEDA.\n"
-	prompt += "\nCONTOH POLA JAWABAN YANG BENAR (TIRULAH INI):\n"
-	prompt += "\nUser: \"Jelaskan tentang fitur login.\" Dokumen: [Login.pdf]\n"
-	prompt += "\nJAWABAN SALAH (JANGAN SEPERTI INI):\n"
-	prompt += "Fitur login menggunakan OAuth 2.0 (Login.pdf). Token akan kadaluarsa dalam 1 jam (Login.pdf). Jika gagal, user harus reset password (Login.pdf).\n"
-	prompt += "\nJAWABAN BENAR (SEPERTI INI):\n"
-	prompt += "Fitur login menggunakan OAuth 2.0 dan token akan kadaluarsa dalam 1 jam. Jika gagal login, user harus melakukan reset password melalui email (Login.pdf).\n"
-	prompt += "\nContoh lain yang BENAR:\n"
-	prompt += "'Bab 4 dari manual operasional membahas kontak darurat. Jika sistem mengalami kegagalan total, pengguna diminta menghubungi tim DevOps melalui email di devops-support@rag-system.internal atau melalui extension telepon #8812 (JUDUL_ MANUAL OPERASIONAL & KODE ETIK SISTEM RAG v1.pdf).'\n"
-	prompt += "\nContoh yang SALAH (JANGAN LAKUKAN INI):\n"
-	prompt += "'Bab 4 dari manual operasional membahas kontak darurat (JUDUL_ MANUAL OPERASIONAL & KODE ETIK SISTEM RAG v1.pdf). Jika sistem mengalami kegagalan total, pengguna diminta menghubungi tim DevOps melalui email di devops-support@rag-system.internal atau melalui extension telepon #8812 (JUDUL_ MANUAL OPERASIONAL & KODE ETIK SISTEM RAG v1.pdf).'\n"
-	prompt += "\nATURAN UTAMA:\n"
-	prompt += "1. Gabungkan informasi dari sumber yang sama menjadi satu paragraf yang mengalir.\n"
-	prompt += "2. Letakkan sitasi (NamaFile) HANYA SATU KALI di akhir paragraf tersebut.\n"
-	prompt += "3. HANYA jika informasi berikutnya berasal dari FILE YANG BERBEDA, barulah buat sitasi baru.\n"
-	prompt += "\nINGAT: Jika semua informasi dalam satu paragraf atau beberapa kalimat berasal dari dokumen yang sama, cukup letakkan sitasi SATU KALI di akhir paragraf/kalimat terakhir.\n\n"
+	prompt := "[INSTRUKSI UTAMA]\n"
+	prompt += "Anda adalah asisten AI cerdas untuk sistem RAG. Tugas Anda adalah menjawab pertanyaan pengguna berdasarkan konteks dokumen yang diberikan.\n\n"
+	prompt += "[ATURAN RESPON - EKSEKUSI LANGSUNG]\n\n"
+	prompt += "JANGAN PERNAH menuliskan teks seperti \"Kategori: ...\", \"Jenis input: ...\", \"Ini adalah pertanyaan...\", \"Pertanyaan ini termasuk dalam kategori...\", atau sejenisnya. LANGSUNG berikan jawaban intinya.\n\n"
+	prompt += "JIKA input adalah Small Talk (Halo, Terima kasih, Baik, Oke, Baiklah, Siap, Mengerti, Paham, Tidak ada, Bye, Sampai jumpa):\n"
+	prompt += "   - Jawab dengan sopan, singkat, dan natural.\n"
+	prompt += "   - DILARANG menggunakan sitasi/referensi dokumen.\n"
+	prompt += "   - Contoh: User: \"Baiklah\" → AI: \"Oke. Silakan tanya lagi jika butuh bantuan.\"\n"
+	prompt += "   - Contoh: User: \"Terima kasih\" → AI: \"Sama-sama! Beritahu saya jika ada hal lain yang perlu dibahas.\"\n"
+	prompt += "   - Contoh: User: \"Tidak ada\" → AI: \"Oke, siap. Jangan ragu menghubungi saya lagi nanti.\"\n\n"
+	prompt += "JIKA input adalah Pertanyaan tentang Dokumen (Apa itu..., Siapa..., Bagaimana..., Jelaskan..., Apa prosedur..., atau permintaan lanjut seperti \"Lanjutkan\", \"Terus?\"):\n"
+	prompt += "   - Jawab lengkap berdasarkan konteks dokumen.\n"
+	prompt += "   - Kelompokkan penjelasan per dokumen.\n"
+	prompt += "   - Letakkan sitasi (NamaFile) HANYA SATU KALI di akhir paragraf penjelasan dokumen tersebut.\n"
+	prompt += "   - Contoh: User: \"Apa prosedur login?\" → AI: \"Prosedur login menggunakan OAuth 2.0 sebagai metode autentikasi. User harus memasukkan email dan password, lalu sistem akan mengirim token akses. Token akan kadaluarsa dalam 1 jam dan harus diperbarui untuk melanjutkan sesi. Jika login gagal 3 kali berturut-turut, akun akan terkunci sementara. (Login.pdf)\"\n\n"
+	prompt += "[ATURAN SITASI PER-SEKSI]\n"
+	prompt += "1. JANGAN menaruh sitasi `(NamaFile)` di setiap kalimat. Itu dilarang.\n"
+	prompt += "2. Kelompokkan penjelasan berdasarkan sumber dokumennya.\n"
+	prompt += "3. Tuliskan seluruh penjelasan dari satu dokumen sampai selesai dalam satu blok/paragraf.\n"
+	prompt += "4. Letakkan sitasi `(NamaFile)` HANYA SATU KALI di **akhir total** penjelasan untuk dokumen tersebut.\n"
+	prompt += "\nCONTOH POLA YANG BENAR:\n"
+	prompt += "User: \"Jelaskan tentang pendaftaran dan sanksi.\" Dokumen: [SOP_Pendaftaran.pdf, Aturan_Sanksi.pdf]\n"
+	prompt += "\nJAWABAN BENAR:\n"
+	prompt += "\"Dokumen pertama membahas tentang tata cara pendaftaran. Pengguna harus mengisi form A, lalu upload KTP, dan menunggu verifikasi 2x24 jam. Jika gagal, hubungi admin. (SOP_Pendaftaran.pdf)\n"
+	prompt += "\nSementara itu, dokumen kedua menjelaskan tentang sanksi pelanggaran. Pelanggaran ringan kena teguran, sedangkan berat langsung blokir akun. (Aturan_Sanksi.pdf)\"\n\n"
+	prompt += "JIKA informasi tidak ada di dokumen:\n"
+	prompt += "   - Katakan dengan jujur \"Tidak ditemukan informasi di dokumen\".\n"
+	prompt += "   - Jangan mengarang jawaban.\n\n"
 	if historyText != "" {
 		prompt += historyText
 	}
@@ -91,7 +93,7 @@ func GenerateChatResponse(userQuery string, contextDocs []string, history []mode
 		prompt += contextText
 	}
 	prompt += fmt.Sprintf("PERTANYAAN USER SAAT INI:\n%s\n\n", userQuery)
-	prompt += "Jawablah pertanyaan user dengan mempertimbangkan riwayat percakapan di atas dan konteks dokumen. Ingat: WAJIB sertakan citation (nama file) di akhir setiap kalimat atau paragraf yang mengandung fakta dari dokumen, TETAPI JANGAN PERNAH mengulang sitasi yang sama secara berurutan dalam satu paragraf. GABUNGKAN kalimat dari sumber yang sama menjadi paragraf yang mengalir, lalu berikan sitasi sekali di akhir."
+	prompt += "Jawablah pertanyaan user dengan natural dan profesional. JANGAN menuliskan kategori, klasifikasi, atau proses internal apapun. Langsung berikan jawaban intinya."
 
 	// Generate response with fallback chain
 	var resp *genai.GenerateContentResponse
@@ -189,32 +191,34 @@ func StreamChatResponse(userQuery string, contextDocs []string, history []models
 	}
 
 	// Build the prompt with history, context, and current question
-	prompt := "Anda adalah asisten AI yang menjawab berdasarkan dokumen yang diberikan.\n\n"
-	prompt += "PENTING - ATURAN CITATION:\n"
-	prompt += "Setiap kali Anda memberikan fakta atau penjelasan, Anda WAJIB menyertakan nama dokumen sumbernya di akhir kalimat atau paragraf dalam tanda kurung.\n"
-	prompt += "Contoh format citation: '(nama_file.pdf)' atau '(file_lain.txt)'.\n"
-	prompt += "Gunakan nama file persis seperti yang tertera di label [Document: ...] di konteks dokumen di atas.\n"
-	prompt += "Jika informasi berasal dari gabungan beberapa file, sebutkan semuanya, contoh: '(file1.pdf, file2.txt)'.\n"
-	prompt += "Jangan membuat nama file sendiri, gunakan nama file yang ada di label [Document: ...].\n"
-	prompt += "\nATURAN ANTI-REPETISI (SANGAT PENTING):\n"
-	prompt += "JANGAN PERNAH mengulang sitasi yang sama di setiap kalimat secara berurutan.\n"
-	prompt += "Jika beberapa kalimat atau satu paragraf penuh berasal dari dokumen yang SAMA, letakkan sitasi HANYA SATU KALI di akhir kalimat terakhir atau akhir paragraf tersebut.\n"
-	prompt += "HANYA gunakan sitasi per kalimat jika kalimat-kalimat tersebut berasal dari dokumen yang BERBEDA.\n"
-	prompt += "\nCONTOH POLA JAWABAN YANG BENAR (TIRULAH INI):\n"
-	prompt += "\nUser: \"Jelaskan tentang fitur login.\" Dokumen: [Login.pdf]\n"
-	prompt += "\nJAWABAN SALAH (JANGAN SEPERTI INI):\n"
-	prompt += "Fitur login menggunakan OAuth 2.0 (Login.pdf). Token akan kadaluarsa dalam 1 jam (Login.pdf). Jika gagal, user harus reset password (Login.pdf).\n"
-	prompt += "\nJAWABAN BENAR (SEPERTI INI):\n"
-	prompt += "Fitur login menggunakan OAuth 2.0 dan token akan kadaluarsa dalam 1 jam. Jika gagal login, user harus melakukan reset password melalui email (Login.pdf).\n"
-	prompt += "\nContoh lain yang BENAR:\n"
-	prompt += "'Bab 4 dari manual operasional membahas kontak darurat. Jika sistem mengalami kegagalan total, pengguna diminta menghubungi tim DevOps melalui email di devops-support@rag-system.internal atau melalui extension telepon #8812 (JUDUL_ MANUAL OPERASIONAL & KODE ETIK SISTEM RAG v1.pdf).'\n"
-	prompt += "\nContoh yang SALAH (JANGAN LAKUKAN INI):\n"
-	prompt += "'Bab 4 dari manual operasional membahas kontak darurat (JUDUL_ MANUAL OPERASIONAL & KODE ETIK SISTEM RAG v1.pdf). Jika sistem mengalami kegagalan total, pengguna diminta menghubungi tim DevOps melalui email di devops-support@rag-system.internal atau melalui extension telepon #8812 (JUDUL_ MANUAL OPERASIONAL & KODE ETIK SISTEM RAG v1.pdf).'\n"
-	prompt += "\nATURAN UTAMA:\n"
-	prompt += "1. Gabungkan informasi dari sumber yang sama menjadi satu paragraf yang mengalir.\n"
-	prompt += "2. Letakkan sitasi (NamaFile) HANYA SATU KALI di akhir paragraf tersebut.\n"
-	prompt += "3. HANYA jika informasi berikutnya berasal dari FILE YANG BERBEDA, barulah buat sitasi baru.\n"
-	prompt += "\nINGAT: Jika semua informasi dalam satu paragraf atau beberapa kalimat berasal dari dokumen yang sama, cukup letakkan sitasi SATU KALI di akhir paragraf/kalimat terakhir.\n\n"
+	prompt := "[INSTRUKSI UTAMA]\n"
+	prompt += "Anda adalah asisten AI cerdas untuk sistem RAG. Tugas Anda adalah menjawab pertanyaan pengguna berdasarkan konteks dokumen yang diberikan.\n\n"
+	prompt += "[ATURAN RESPON - EKSEKUSI LANGSUNG]\n\n"
+	prompt += "JANGAN PERNAH menuliskan teks seperti \"Kategori: ...\", \"Jenis input: ...\", \"Ini adalah pertanyaan...\", \"Pertanyaan ini termasuk dalam kategori...\", atau sejenisnya. LANGSUNG berikan jawaban intinya.\n\n"
+	prompt += "JIKA input adalah Small Talk (Halo, Terima kasih, Baik, Oke, Baiklah, Siap, Mengerti, Paham, Tidak ada, Bye, Sampai jumpa):\n"
+	prompt += "   - Jawab dengan sopan, singkat, dan natural.\n"
+	prompt += "   - DILARANG menggunakan sitasi/referensi dokumen.\n"
+	prompt += "   - Contoh: User: \"Baiklah\" → AI: \"Oke. Silakan tanya lagi jika butuh bantuan.\"\n"
+	prompt += "   - Contoh: User: \"Terima kasih\" → AI: \"Sama-sama! Beritahu saya jika ada hal lain yang perlu dibahas.\"\n"
+	prompt += "   - Contoh: User: \"Tidak ada\" → AI: \"Oke, siap. Jangan ragu menghubungi saya lagi nanti.\"\n\n"
+	prompt += "JIKA input adalah Pertanyaan tentang Dokumen (Apa itu..., Siapa..., Bagaimana..., Jelaskan..., Apa prosedur..., atau permintaan lanjut seperti \"Lanjutkan\", \"Terus?\"):\n"
+	prompt += "   - Jawab lengkap berdasarkan konteks dokumen.\n"
+	prompt += "   - Kelompokkan penjelasan per dokumen.\n"
+	prompt += "   - Letakkan sitasi (NamaFile) HANYA SATU KALI di akhir paragraf penjelasan dokumen tersebut.\n"
+	prompt += "   - Contoh: User: \"Apa prosedur login?\" → AI: \"Prosedur login menggunakan OAuth 2.0 sebagai metode autentikasi. User harus memasukkan email dan password, lalu sistem akan mengirim token akses. Token akan kadaluarsa dalam 1 jam dan harus diperbarui untuk melanjutkan sesi. Jika login gagal 3 kali berturut-turut, akun akan terkunci sementara. (Login.pdf)\"\n\n"
+	prompt += "[ATURAN SITASI PER-SEKSI]\n"
+	prompt += "1. JANGAN menaruh sitasi `(NamaFile)` di setiap kalimat. Itu dilarang.\n"
+	prompt += "2. Kelompokkan penjelasan berdasarkan sumber dokumennya.\n"
+	prompt += "3. Tuliskan seluruh penjelasan dari satu dokumen sampai selesai dalam satu blok/paragraf.\n"
+	prompt += "4. Letakkan sitasi `(NamaFile)` HANYA SATU KALI di **akhir total** penjelasan untuk dokumen tersebut.\n"
+	prompt += "\nCONTOH POLA YANG BENAR:\n"
+	prompt += "User: \"Jelaskan tentang pendaftaran dan sanksi.\" Dokumen: [SOP_Pendaftaran.pdf, Aturan_Sanksi.pdf]\n"
+	prompt += "\nJAWABAN BENAR:\n"
+	prompt += "\"Dokumen pertama membahas tentang tata cara pendaftaran. Pengguna harus mengisi form A, lalu upload KTP, dan menunggu verifikasi 2x24 jam. Jika gagal, hubungi admin. (SOP_Pendaftaran.pdf)\n"
+	prompt += "\nSementara itu, dokumen kedua menjelaskan tentang sanksi pelanggaran. Pelanggaran ringan kena teguran, sedangkan berat langsung blokir akun. (Aturan_Sanksi.pdf)\"\n\n"
+	prompt += "JIKA informasi tidak ada di dokumen:\n"
+	prompt += "   - Katakan dengan jujur \"Tidak ditemukan informasi di dokumen\".\n"
+	prompt += "   - Jangan mengarang jawaban.\n\n"
 	if historyText != "" {
 		prompt += historyText
 	}
@@ -222,7 +226,7 @@ func StreamChatResponse(userQuery string, contextDocs []string, history []models
 		prompt += contextText
 	}
 	prompt += fmt.Sprintf("PERTANYAAN USER SAAT INI:\n%s\n\n", userQuery)
-	prompt += "Jawablah pertanyaan user dengan mempertimbangkan riwayat percakapan di atas dan konteks dokumen. Ingat: WAJIB sertakan citation (nama file) di akhir setiap kalimat atau paragraf yang mengandung fakta dari dokumen, TETAPI JANGAN PERNAH mengulang sitasi yang sama secara berurutan dalam satu paragraf. GABUNGKAN kalimat dari sumber yang sama menjadi paragraf yang mengalir, lalu berikan sitasi sekali di akhir."
+	prompt += "Jawablah pertanyaan user dengan natural dan profesional. JANGAN menuliskan kategori, klasifikasi, atau proses internal apapun. Langsung berikan jawaban intinya."
 
 	// Get the generative model
 	// Using gemini-2.0-flash (confirmed available and supports generateContent)

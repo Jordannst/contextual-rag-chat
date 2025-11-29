@@ -3,19 +3,24 @@
 import React, { useState, useRef, useEffect } from 'react';
 
 interface ChatInputProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, selectedFiles?: string[]) => void;
   isLoading?: boolean;
   placeholder?: string;
+  availableDocuments?: string[]; // List of available document names for filtering
 }
 
 export default function ChatInput({ 
   onSend, 
   isLoading = false,
-  placeholder = 'Enter a prompt here'
+  placeholder = 'Enter a prompt here',
+  availableDocuments = []
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [isFocused, setIsFocused] = useState(false);
+  const [showFilter, setShowFilter] = useState(false);
+  const [selectedDocFilters, setSelectedDocFilters] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const filterRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -25,14 +30,50 @@ export default function ChatInput({
     }
   }, [message]);
 
+  // Close filter popover when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
+        setShowFilter(false);
+      }
+    };
+
+    if (showFilter) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showFilter]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim() && !isLoading) {
-      onSend(message.trim());
+      // Send selected files (empty array means "search all")
+      onSend(message.trim(), selectedDocFilters.length > 0 ? selectedDocFilters : undefined);
       setMessage('');
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
       }
+    }
+  };
+
+  const handleToggleFilter = (fileName: string) => {
+    setSelectedDocFilters(prev => {
+      if (prev.includes(fileName)) {
+        return prev.filter(f => f !== fileName);
+      } else {
+        return [...prev, fileName];
+      }
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedDocFilters.length === availableDocuments.length) {
+      setSelectedDocFilters([]);
+    } else {
+      setSelectedDocFilters([...availableDocuments]);
     }
   };
 
@@ -57,6 +98,32 @@ export default function ChatInput({
               }
             `}
           >
+            {/* Filter Button */}
+            {availableDocuments.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowFilter(!showFilter)}
+                className={`
+                  absolute left-2 bottom-2 w-8 h-8 rounded-full flex items-center justify-center
+                  transition-all duration-200
+                  ${selectedDocFilters.length > 0
+                    ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/50'
+                    : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-300'
+                  }
+                `}
+                title={selectedDocFilters.length > 0 ? `Filtered: ${selectedDocFilters.length} file(s)` : 'Filter by document'}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                {selectedDocFilters.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 text-white text-[10px] rounded-full flex items-center justify-center">
+                    {selectedDocFilters.length}
+                  </span>
+                )}
+              </button>
+            )}
+
             <textarea
               ref={textareaRef}
               value={message}
@@ -66,15 +133,16 @@ export default function ChatInput({
               onBlur={() => setIsFocused(false)}
               placeholder={placeholder}
               rows={1}
-              className="
-                w-full px-5 py-3 pr-12 rounded-full
+              className={`
+                w-full py-3 rounded-full
                 text-[15px] text-neutral-100
                 placeholder:text-neutral-500
                 focus:outline-none
                 resize-none overflow-hidden
                 bg-transparent
                 transition-colors duration-300
-              "
+                ${availableDocuments.length > 0 ? 'px-12 pr-12' : 'px-5 pr-12'}
+              `}
               style={{ maxHeight: '120px' }}
               disabled={isLoading}
             />
@@ -101,6 +169,52 @@ export default function ChatInput({
                 </svg>
               )}
             </button>
+
+            {/* Filter Popover */}
+            {showFilter && availableDocuments.length > 0 && (
+              <div
+                ref={filterRef}
+                className="absolute bottom-full left-0 mb-2 w-64 bg-neutral-900 border border-neutral-700 rounded-lg shadow-xl z-50 max-h-80 overflow-hidden flex flex-col"
+              >
+                <div className="p-3 border-b border-neutral-700 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-neutral-100">Filter Documents</h3>
+                  <button
+                    onClick={handleSelectAll}
+                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                  >
+                    {selectedDocFilters.length === availableDocuments.length ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+                <div className="overflow-y-auto p-2">
+                  {availableDocuments.map((fileName) => (
+                    <label
+                      key={fileName}
+                      className="flex items-center gap-2 p-2 rounded hover:bg-neutral-800 cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedDocFilters.includes(fileName)}
+                        onChange={() => handleToggleFilter(fileName)}
+                        className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+                      />
+                      <span className="text-sm text-neutral-200 truncate flex-1" title={fileName}>
+                        {fileName}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {selectedDocFilters.length > 0 && (
+                  <div className="p-2 border-t border-neutral-700">
+                    <button
+                      onClick={() => setSelectedDocFilters([])}
+                      className="w-full text-xs text-neutral-400 hover:text-neutral-300 transition-colors"
+                    >
+                      Clear Filters
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           
           <p className="text-xs text-neutral-500 mt-2 px-5 text-center transition-colors duration-300">
