@@ -41,11 +41,14 @@
 
 ### Key Capabilities
 
-- 📄 **Document Upload & Processing**: Upload PDF or TXT files with automatic text extraction
-- 🔍 **Semantic Search**: Find relevant document chunks using vector similarity search
+- 📄 **Document Upload & Processing**: Upload PDF or TXT files with automatic text extraction and chunking
+- 🔍 **Hybrid Search**: Advanced search combining vector similarity (semantic) + full-text search (keyword)
 - 💬 **Context-Aware Chat**: Ask questions and get answers based on your uploaded documents
 - 🧠 **Conversation History**: Maintains context across multiple messages
 - ⚡ **Smart Chunking**: Intelligent text splitting with overlap for better context preservation
+- 📚 **Document Management**: View, delete, and sync documents with database
+- 📝 **Inline Citations**: Source references displayed directly in answers with blue styling
+- 🌊 **Streaming Response**: Real-time response streaming using Server-Sent Events (SSE)
 - 🎨 **Modern UI**: Beautiful, responsive interface inspired by Google's Gemini design
 
 ---
@@ -66,11 +69,20 @@
   - Cosine similarity search for semantic matching
   - Source file tracking for each document chunk
 
+- **Hybrid Search** ⭐ NEW
+  - **Vector Search**: Semantic similarity using embeddings (70% weight)
+  - **Full-Text Search**: Keyword matching using PostgreSQL tsvector (30% weight)
+  - **Combined Scoring**: Weighted combination for optimal results
+  - **Fallback Strategy**: Automatically falls back to vector-only if hybrid search yields no results
+  - **GIN Index**: Fast full-text search performance
+
 - **RAG Pipeline**
   - Query embedding generation
-  - Top-K similar document retrieval
-  - Context-aware response generation
+  - Hybrid search (vector + full-text) for document retrieval
+  - Similarity threshold filtering (0.65) for accuracy
+  - Context-aware response generation with inline citations
   - Automatic fallback model chain
+  - Streaming response using Server-Sent Events (SSE)
 
 - **Conversation Management**
   - Full conversation history support
@@ -86,9 +98,11 @@
   - Typing indicators for better UX
 
 - **Interactive Components**
-  - Drag-and-drop file upload
-  - Real-time chat interface
-  - Prompt suggestions
+  - Drag-and-drop file upload (multiple files support)
+  - Real-time chat interface with streaming
+  - Document list with sync and delete functionality
+  - Inline citations with blue styling for visibility
+  - References section showing source files
   - Message timestamps
 
 ### 🔧 Developer Experience
@@ -196,8 +210,9 @@
 
 2. **Query Processing**
    ```
-   User Question → Generate Query Embedding → Vector Similarity Search → 
-   Retrieve Top-K Chunks → Build Context → Generate Response with Gemini → Return Answer
+   User Question → Generate Query Embedding → Hybrid Search (Vector + Full-Text) → 
+   Apply Similarity Threshold (0.65) → Retrieve Top-K Chunks → Build Context → 
+   Generate Response with Gemini (Streaming) → Return Answer with Inline Citations
    ```
 
 3. **Conversation Context**
@@ -289,6 +304,9 @@ go run cmd/create-db/main.go
 
 # Run migrations
 go run cmd/migrate/main.go
+
+# Run Hybrid Search migration (if not included in main migration)
+# Execute migration_add_text_search_simple.sql in pgAdmin or psql
 ```
 
 ---
@@ -313,6 +331,26 @@ To modify, update the `SplitText` call:
 ```go
 chunks := utils.SplitText(text, 1000, 200) // (text, chunkSize, overlap)
 ```
+
+### Hybrid Search Configuration
+
+Hybrid Search combines vector similarity and full-text search. Configuration in `backend/handlers/chat.go`:
+
+```go
+vectorWeight := 0.7 // 70% vector, 30% text
+similarityThreshold := 0.65 // Cosine distance threshold
+```
+
+To modify weights, change `vectorWeight` (0.0 to 1.0). Higher values favor semantic similarity, lower values favor keyword matching.
+
+### Similarity Threshold
+
+The similarity threshold filters out irrelevant documents. Current setting: **0.65**
+
+- Lower threshold (e.g., 0.5): More strict, only very similar documents
+- Higher threshold (e.g., 0.7): More lenient, includes more documents
+
+To modify, update `similarityThreshold` in `backend/handlers/chat.go`.
 
 ### Model Configuration
 
@@ -362,12 +400,14 @@ The frontend will be available at `http://localhost:3000`
 
 2. **Start Chatting**
    - Type your question in the chat input
-   - The AI will search your documents and provide contextual answers
+   - The AI uses **Hybrid Search** (vector + full-text) to find relevant documents
+   - Answers stream in real-time with inline citations (blue text)
    - Continue the conversation - context is preserved across messages
 
-3. **Use Prompt Suggestions**
-   - Click on suggested prompts to get started quickly
-   - Examples: "Plan a trip", "Explain a concept", etc.
+3. **Manage Documents**
+   - View all uploaded documents in the document list
+   - Delete documents you no longer need
+   - Sync database with physical files to remove orphaned entries
 
 ---
 
@@ -428,7 +468,7 @@ Content-Type: multipart/form-data
 
 ---
 
-#### 3. Chat
+#### 3. Chat (Streaming)
 
 ```http
 POST /api/chat
@@ -452,26 +492,93 @@ Content-Type: application/json
 }
 ```
 
+**Response:** Server-Sent Events (SSE) stream
+
+**Event Types:**
+- `metadata`: Source files information
+  ```json
+  {
+    "type": "metadata",
+    "sources": ["document1.pdf", "document2.txt"],
+    "sourceIds": [1, 2, 3]
+  }
+  ```
+- `chunk`: Text chunks (streaming)
+  ```json
+  {
+    "type": "chunk",
+    "chunk": "Based on the uploaded documents..."
+  }
+  ```
+- `done`: Completion event
+  ```json
+  {
+    "type": "done",
+    "totalChunks": 15,
+    "fullLength": 1234
+  }
+  ```
+- `error`: Error event
+  ```json
+  {
+    "type": "error",
+    "error": "Failed to generate query embedding",
+    "message": "Detailed error message"
+  }
+  ```
+
+**Note:** The chat endpoint uses Hybrid Search by default, combining vector similarity (70%) and full-text search (30%). If hybrid search yields no results, it automatically falls back to vector-only search.
+
+---
+
+#### 4. Get Documents
+
+```http
+GET /api/documents
+```
+
 **Response:**
 ```json
 {
-  "response": "Based on the uploaded documents, the main topic is...",
-  "sources": [
-    "Document chunk 1 content...",
-    "Document chunk 2 content...",
-    "Document chunk 3 content..."
-  ],
-  "sourceIds": [1, 2, 3]
+  "documents": ["document1.pdf", "document2.txt"],
+  "count": 2
 }
 ```
 
-**Error Response:**
+---
+
+#### 5. Delete Document
+
+```http
+DELETE /api/documents/:filename
+```
+
+**Response:**
 ```json
 {
-  "error": "Failed to generate query embedding",
-  "message": "Detailed error message"
+  "message": "Document deleted successfully",
+  "deletedChunks": 5
 }
 ```
+
+---
+
+#### 6. Sync Documents
+
+```http
+POST /api/documents/sync
+```
+
+**Response:**
+```json
+{
+  "message": "Sync complete",
+  "deleted_count": 2,
+  "added_count": 1
+}
+```
+
+**Note:** Syncs database with physical files in `uploads/` directory. Removes orphaned database entries and imports new files.
 
 ---
 
@@ -594,7 +701,19 @@ go run cmd/migrate/main.go
 - Check `DATABASE_URL` in `.env` file
 - Ensure pgvector extension is installed: `CREATE EXTENSION vector;`
 
-#### 2. Model Not Found (404)
+#### 2. Hybrid Search Returns No Results
+
+**Issue**: Hybrid search yields 0 results even though documents exist
+
+**Solution**:
+- The system automatically falls back to vector-only search
+- Check logs for: `"WARNING - Hybrid search yielded 0 results, falling back to vector-only search"`
+- If still no results, try:
+  - Adjust similarity threshold (currently 0.65)
+  - Check if documents are properly indexed (text_search column populated)
+  - Verify GIN index exists: `\d documents` in psql
+
+#### 3. Model Not Found (404)
 
 **Error**: `models/gemini-1.5-flash is not found`
 
@@ -603,7 +722,7 @@ go run cmd/migrate/main.go
 - Update model name in `utils/chat.go` to a valid model
 - The fallback chain will automatically try alternative models
 
-#### 3. Environment Variables Not Loading
+#### 4. Environment Variables Not Loading
 
 **Error**: `DATABASE_URL is not set`
 
@@ -612,7 +731,7 @@ go run cmd/migrate/main.go
 - Check for BOM (Byte Order Mark) in `.env` file - the app handles this automatically
 - Verify file format: `KEY=value` (no quotes needed)
 
-#### 4. PDF Extraction Fails
+#### 5. PDF Extraction Fails
 
 **Error**: `failed to extract text from PDF`
 
@@ -622,7 +741,7 @@ go run cmd/migrate/main.go
 - Verify file is valid PDF format
 - Check logs for detailed error messages
 
-#### 5. Port Already in Use
+#### 6. Port Already in Use
 
 **Error**: `bind: address already in use`
 
@@ -637,9 +756,11 @@ Enable detailed logging by checking the console output. The backend logs every s
 ```
 [Chat] Step 1: Request diterima
 [Chat] Step 2: Generating embedding...
-[Chat] Step 3: Mencari dokumen di DB...
-[Chat] Step 4: Dokumen ditemukan: 3 dokumen
-[Chat] Step 5: Mengirim prompt ke Gemini...
+[Chat] Step 3: Mencari dokumen di DB menggunakan Hybrid Search...
+[Chat] Step 3: Hybrid Search menemukan: 3 dokumen
+[Chat] Step 4: Candidate 1 - SourceFile: document.pdf | Distance: 0.6123
+[Chat] Step 4: Total context docs: 3, Unique source files: 2, Filtered out: 0
+[Chat] Step 6: Starting streaming response...
 ```
 
 ---
