@@ -53,9 +53,13 @@ func ChatHandler(c *gin.Context) {
 	}
 	log.Printf("[Chat] Step 2: Embedding Query berhasil generate (dimension: %d)\n", len(queryEmbedding))
 
-	// Step 3: Search for similar documents
-	log.Printf("[Chat] Step 3: Mencari dokumen di DB...\n")
-	similarDocs, err := db.SearchSimilarDocuments(queryEmbedding, 3)
+	// Step 3: Search for similar documents using Hybrid Search
+	// Hybrid Search combines vector similarity (semantic) + full-text search (keyword)
+	log.Printf("[Chat] Step 3: Mencari dokumen di DB menggunakan Hybrid Search...\n")
+	limit := 3
+	vectorWeight := 0.7 // 70% vector, 30% text
+	
+	similarDocs, err := db.SearchDocuments(queryEmbedding, req.Question, limit, vectorWeight)
 	if err != nil {
 		log.Printf("[Chat] ERROR DI STEP 3 (Search Documents): %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -64,13 +68,29 @@ func ChatHandler(c *gin.Context) {
 		})
 		return
 	}
-	log.Printf("[Chat] Step 3: Dokumen ditemukan: %d dokumen\n", len(similarDocs))
+	log.Printf("[Chat] Step 3: Hybrid Search menemukan: %d dokumen\n", len(similarDocs))
+	
+	// Fallback Strategy: Jika hybrid search tidak menemukan hasil, fallback ke vector-only
+	if len(similarDocs) == 0 && req.Question != "" {
+		log.Printf("[Chat] Step 3: WARNING - Hybrid search yielded 0 results, falling back to vector-only search.\n")
+		similarDocs, err = db.SearchSimilarDocuments(queryEmbedding, limit)
+		if err != nil {
+			log.Printf("[Chat] ERROR DI STEP 3 (Fallback Vector Search): %v\n", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to search similar documents (fallback)",
+				"message": err.Error(),
+			})
+			return
+		}
+		log.Printf("[Chat] Step 3: Vector-only search menemukan: %d dokumen\n", len(similarDocs))
+	}
 
 	// Step 4: Extract content from similar documents and collect unique source files
 	// Apply similarity threshold to filter out irrelevant results
-	const similarityThreshold = 0.5 // Cosine distance threshold (0 = identical, 2 = opposite)
-	// Documents with distance < 0.5 are considered relevant
-	// Documents with distance >= 0.5 are too dissimilar and should be excluded
+	const similarityThreshold = 0.65 // Cosine distance threshold (0 = identical, 2 = opposite)
+	// Documents with distance < 0.65 are considered relevant
+	// Documents with distance >= 0.65 are too dissimilar and should be excluded
+	// Note: Increased from 0.5 to 0.65 to be less strict for short queries
 	
 	var contextDocs []string
 	var sourceIDs []int32
@@ -79,11 +99,15 @@ func ChatHandler(c *gin.Context) {
 	var filteredCount int                       // Count of documents filtered out
 	
 	for i, doc := range similarDocs {
+		// Log candidate before filtering to see actual distances
+		log.Printf("[Chat] Step 4: Candidate %d - SourceFile: %s | Distance: %.4f\n", 
+			i+1, doc.SourceFile, doc.Distance)
+		
 		// Apply similarity threshold filter
 		// Only include documents with distance below threshold (more similar)
 		if doc.Distance >= similarityThreshold {
-			log.Printf("[Chat] Step 4: Dokumen %d - ID: %d, SourceFile: %s, Distance: %.4f (FILTERED OUT - too dissimilar)\n", 
-				i+1, doc.ID, doc.SourceFile, doc.Distance)
+			log.Printf("[Chat] Step 4: Dokumen %d - ID: %d, SourceFile: %s, Distance: %.4f (FILTERED OUT - too dissimilar, threshold: %.2f)\n", 
+				i+1, doc.ID, doc.SourceFile, doc.Distance, similarityThreshold)
 			filteredCount++
 			continue // Skip this document - not relevant enough
 		}

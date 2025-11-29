@@ -63,6 +63,8 @@ type Document struct {
 }
 
 // InsertDocument inserts a document with its embedding vector into the database
+// Note: text_search column is automatically populated by database trigger
+// The trigger (trigger_update_text_search) will create tsvector from content
 func InsertDocument(content string, embedding []float32, sourceFile string) error {
 	if Pool == nil {
 		return fmt.Errorf("database pool is not initialized")
@@ -74,6 +76,7 @@ func InsertDocument(content string, embedding []float32, sourceFile string) erro
 	vector := pgvector.NewVector(embedding)
 
 	// Execute INSERT query with source_file
+	// text_search will be automatically populated by trigger
 	_, err := Pool.Exec(ctx, "INSERT INTO documents (content, embedding, source_file) VALUES ($1, $2, $3)", content, vector, sourceFile)
 	if err != nil {
 		return fmt.Errorf("failed to insert document: %w", err)
@@ -135,6 +138,105 @@ func SearchSimilarDocuments(queryEmbedding []float32, limit int) ([]Document, er
 	}
 
 	return documents, nil
+}
+
+// SearchHybridDocuments performs hybrid search combining vector similarity and full-text search
+// queryEmbedding: vector embedding for semantic search
+// queryText: text query for full-text search (will be converted to tsquery)
+// limit: maximum number of results to return
+// vectorWeight: weight for vector search (0.0 to 1.0), textWeight = 1.0 - vectorWeight
+// Returns documents sorted by combined score
+func SearchHybridDocuments(queryEmbedding []float32, queryText string, limit int, vectorWeight float64) ([]Document, error) {
+	if Pool == nil {
+		return nil, fmt.Errorf("database pool is not initialized")
+	}
+
+	if limit <= 0 {
+		limit = 5 // Default limit
+	}
+
+	// Normalize weights
+	if vectorWeight < 0 {
+		vectorWeight = 0
+	}
+	if vectorWeight > 1 {
+		vectorWeight = 1
+	}
+	textWeight := 1.0 - vectorWeight
+
+	// Default to 0.7 vector, 0.3 text if not specified
+	if vectorWeight == 0 && textWeight == 0 {
+		vectorWeight = 0.7
+		textWeight = 0.3
+	}
+
+	ctx := context.Background()
+
+	// Convert []float32 to pgvector.Vector
+	queryVector := pgvector.NewVector(queryEmbedding)
+
+	// Convert query text to tsquery format
+	// This handles multiple words: "search term" becomes "search & term"
+	// Using plainto_tsquery for user-friendly input (handles phrases naturally)
+	query := `
+		SELECT 
+			id, 
+			content, 
+			source_file,
+			(embedding <=> $1) as vector_distance,
+			ts_rank(text_search, plainto_tsquery('english', $2)) as text_rank,
+			-- Combined score: lower vector_distance is better, higher text_rank is better
+			-- Normalize: (1 - vector_distance/2) for vector, text_rank for text
+			((1 - (embedding <=> $1) / 2.0) * $3 + ts_rank(text_search, plainto_tsquery('english', $2)) * $4) as combined_score
+		FROM documents
+		WHERE text_search @@ plainto_tsquery('english', $2)
+		ORDER BY combined_score DESC
+		LIMIT $5
+	`
+
+	rows, err := Pool.Query(ctx, query, queryVector, queryText, vectorWeight, textWeight, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to perform hybrid search: %w", err)
+	}
+	defer rows.Close()
+
+	var documents []Document
+	for rows.Next() {
+		var doc Document
+		var vectorDist, textRank, combinedScore float64
+		if err := rows.Scan(&doc.ID, &doc.Content, &doc.SourceFile, &vectorDist, &textRank, &combinedScore); err != nil {
+			return nil, fmt.Errorf("failed to scan document: %w", err)
+		}
+		// Store vector distance as Distance (for compatibility with existing code)
+		doc.Distance = vectorDist
+		documents = append(documents, doc)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating documents: %w", err)
+	}
+
+	// Return empty slice if no documents found (not an error)
+	if len(documents) == 0 {
+		return []Document{}, nil
+	}
+
+	return documents, nil
+}
+
+// SearchDocuments is a convenience function that automatically chooses between
+// vector-only search or hybrid search based on whether queryText is provided
+// If queryText is empty, uses vector-only search (SearchSimilarDocuments)
+// If queryText is provided, uses hybrid search (SearchHybridDocuments)
+// vectorWeight: weight for vector search in hybrid mode (default: 0.7)
+func SearchDocuments(queryEmbedding []float32, queryText string, limit int, vectorWeight float64) ([]Document, error) {
+	if queryText == "" {
+		// Use vector-only search if no text query provided
+		return SearchSimilarDocuments(queryEmbedding, limit)
+	}
+	
+	// Use hybrid search if text query is provided
+	return SearchHybridDocuments(queryEmbedding, queryText, limit, vectorWeight)
 }
 
 // GetUniqueDocuments returns a list of unique source file names from the database
