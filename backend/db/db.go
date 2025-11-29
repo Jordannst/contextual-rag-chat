@@ -47,6 +47,61 @@ func InitDB() error {
 	return nil
 }
 
+// RunChatSessionsMigration runs the chat sessions migration if tables don't exist
+func RunChatSessionsMigration() error {
+	ctx := context.Background()
+	
+	// Check if chat_sessions table exists
+	var exists bool
+	checkQuery := `
+		SELECT EXISTS (
+			SELECT FROM information_schema.tables 
+			WHERE table_schema = 'public' 
+			AND table_name = 'chat_sessions'
+		)
+	`
+	err := Pool.QueryRow(ctx, checkQuery).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("failed to check if chat_sessions table exists: %w", err)
+	}
+	
+	if exists {
+		fmt.Println("Chat sessions tables already exist, skipping migration")
+		return nil
+	}
+	
+	// Run migration
+	migrationSQL := `
+		-- Table: chat_sessions
+		CREATE TABLE IF NOT EXISTS chat_sessions (
+			id SERIAL PRIMARY KEY,
+			title TEXT NOT NULL,
+			created_at TIMESTAMP DEFAULT NOW()
+		);
+
+		-- Table: chat_messages
+		CREATE TABLE IF NOT EXISTS chat_messages (
+			id SERIAL PRIMARY KEY,
+			session_id INTEGER NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+			role TEXT NOT NULL CHECK (role IN ('user', 'model')),
+			content TEXT NOT NULL,
+			created_at TIMESTAMP DEFAULT NOW()
+		);
+
+		-- Index for faster queries
+		CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id);
+		CREATE INDEX IF NOT EXISTS idx_chat_sessions_created_at ON chat_sessions(created_at DESC);
+	`
+	
+	_, err = Pool.Exec(ctx, migrationSQL)
+	if err != nil {
+		return fmt.Errorf("failed to run chat sessions migration: %w", err)
+	}
+	
+	fmt.Println("Chat sessions migration completed successfully")
+	return nil
+}
+
 // CloseDB closes the database connection pool
 func CloseDB() {
 	if Pool != nil {

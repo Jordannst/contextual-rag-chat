@@ -9,6 +9,7 @@ import TypingIndicator from '@/components/chat/TypingIndicator';
 import UploadCard from '@/components/upload/UploadCard';
 import DocumentList from '@/components/upload/DocumentList';
 import PDFViewerModal from '@/components/ui/PDFViewerModal';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 interface Message {
   id: string;
@@ -35,6 +36,13 @@ export default function Home() {
   const [suggestions, setSuggestions] = useState<string[]>([]); // Question suggestions
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [availableDocuments, setAvailableDocuments] = useState<string[]>([]); // List of available documents for filtering
+  const [currentSessionId, setCurrentSessionId] = useState<number | null>(null); // Current chat session ID
+  const [sessions, setSessions] = useState<Array<{ id: number; title: string; created_at: string }>>([]); // Chat sessions for sidebar
+  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; sessionId: number | null; sessionTitle: string }>({
+    isOpen: false,
+    sessionId: null,
+    sessionTitle: '',
+  });
 
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -100,6 +108,104 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [documentListRefreshTrigger]);
 
+  // Load chat sessions on mount
+  useEffect(() => {
+    const fetchSessions = async () => {
+      try {
+        const response = await fetch('http://localhost:5000/api/sessions');
+        if (response.ok) {
+          const data = await response.json();
+          setSessions(data.sessions || []);
+        }
+      } catch (error) {
+        console.error('Error fetching sessions:', error);
+      }
+    };
+
+    fetchSessions();
+  }, []);
+
+  // Function to handle session selection
+  const handleSelectSession = async (sessionId: number) => {
+    setCurrentSessionId(sessionId);
+    
+    try {
+      const response = await fetch(`http://localhost:5000/api/sessions/${sessionId}`);
+      if (response.ok) {
+        const data = await response.json();
+        const dbMessages = data.messages || [];
+        
+        // Convert DB messages to UI messages
+        const uiMessages: Message[] = dbMessages.map((msg: any) => ({
+          id: msg.id.toString(),
+          text: msg.content,
+          isUser: msg.role === 'user',
+          timestamp: new Date(msg.created_at),
+        }));
+        
+        setMessages(uiMessages);
+      } else {
+        console.error('Failed to load session messages');
+      }
+    } catch (error) {
+      console.error('Error loading session messages:', error);
+    }
+  };
+
+  // Function to open delete confirmation dialog
+  const handleDeleteClick = (sessionId: number) => {
+    const session = sessions.find(s => s.id === sessionId);
+    const sessionTitle = session?.title || 'this chat';
+    setDeleteConfirm({
+      isOpen: true,
+      sessionId,
+      sessionTitle,
+    });
+  };
+
+  // Function to handle session deletion (after confirmation)
+  const handleDeleteSession = async () => {
+    if (!deleteConfirm.sessionId) return;
+
+    const sessionId = deleteConfirm.sessionId;
+    
+    try {
+      const response = await fetch(`http://localhost:5000/api/sessions/${sessionId}`, {
+        method: 'DELETE',
+      });
+      
+      if (response.ok) {
+        // Close dialog
+        setDeleteConfirm({ isOpen: false, sessionId: null, sessionTitle: '' });
+        
+        // Refresh sessions list
+        const sessionsResponse = await fetch('http://localhost:5000/api/sessions');
+        if (sessionsResponse.ok) {
+          const data = await sessionsResponse.json();
+          setSessions(data.sessions || []);
+        }
+        
+        // If deleted session is currently active, reset chat
+        if (currentSessionId === sessionId) {
+          setCurrentSessionId(null);
+          setMessages([]);
+        }
+      } else {
+        console.error('Failed to delete session');
+        alert('Failed to delete chat. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error deleting session:', error);
+      alert('An error occurred while deleting the chat. Please try again.');
+    }
+  };
+
+  // Function to handle new chat
+  const handleNewChat = () => {
+    setCurrentSessionId(null);
+    setMessages([]);
+  };
+
   const handleSendMessage = async (text: string, selectedFiles?: string[]) => {
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -135,6 +241,7 @@ export default function Home() {
         question: string;
         history: Array<{ role: string; content: string }>;
         selectedFiles?: string[];
+        sessionId?: number;
       } = {
         question: text,
         history: history,
@@ -143,6 +250,11 @@ export default function Home() {
       // Add selectedFiles only if provided (not empty)
       if (selectedFiles && selectedFiles.length > 0) {
         requestBody.selectedFiles = selectedFiles;
+      }
+
+      // Add sessionId if exists
+      if (currentSessionId !== null) {
+        requestBody.sessionId = currentSessionId;
       }
 
       const response = await fetch('http://localhost:5000/api/chat', {
@@ -227,11 +339,22 @@ export default function Home() {
             try {
               const data = JSON.parse(dataLine);
 
-              // Handle metadata event (sources info)
+              // Handle metadata event (sources info + sessionId)
               if (eventType === 'metadata' || data.type === 'metadata') {
                 sources = data.sources || [];
                 sourceIds = data.sourceIds || [];
                 console.log('Received metadata:', { sourcesCount: sources.length, sourceIds });
+                
+                // Handle new session ID if provided
+                if (data.sessionId && currentSessionId === null) {
+                  setCurrentSessionId(data.sessionId);
+                  // Refresh sessions list to show new chat
+                  const sessionsResponse = await fetch('http://localhost:5000/api/sessions');
+                  if (sessionsResponse.ok) {
+                    const sessionsData = await sessionsResponse.json();
+                    setSessions(sessionsData.sessions || []);
+                  }
+                }
                 
                 // Save sources to AI message
                 if (sources.length > 0) {
@@ -342,11 +465,6 @@ export default function Home() {
       setIsLoading(false);
       scrollToBottom();
     }
-  };
-
-
-  const handleNewChat = () => {
-    setMessages([]);
   };
 
   // Handle file selection - only add to selectedFiles, don't upload yet
@@ -507,6 +625,11 @@ export default function Home() {
             onClick: handleNewChat,
           },
         ]}
+        sessions={sessions}
+        currentSessionId={currentSessionId}
+        onSelectSession={handleSelectSession}
+        onDeleteSession={handleDeleteClick}
+        onNewChat={handleNewChat}
       />
 
       {/* Main Content */}
@@ -638,6 +761,18 @@ export default function Home() {
           isOpen={selectedDocument !== null}
           onClose={() => setSelectedDocument(null)}
           fileName={selectedDocument}
+        />
+
+        {/* Delete Confirmation Dialog */}
+        <ConfirmDialog
+          isOpen={deleteConfirm.isOpen}
+          title="Delete Chat"
+          message={`Are you sure you want to delete "${deleteConfirm.sessionTitle}"? This action cannot be undone and all messages in this chat will be permanently deleted.`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          onConfirm={handleDeleteSession}
+          onCancel={() => setDeleteConfirm({ isOpen: false, sessionId: null, sessionTitle: '' })}
+          variant="danger"
         />
       </main>
     </div>

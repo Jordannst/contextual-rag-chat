@@ -19,12 +19,14 @@ type ChatRequest struct {
 	Question      string             `json:"question" binding:"required"`
 	History       []models.ChatMessage `json:"history"`
 	SelectedFiles []string            `json:"selectedFiles,omitempty"` // Optional: filter by specific files
+	SessionID     *int                `json:"sessionId,omitempty"`      // Optional: session ID for persistence
 }
 
 type ChatResponse struct {
 	Response   string   `json:"response"`
 	Sources    []string `json:"sources,omitempty"`
 	SourceIDs  []int32  `json:"sourceIds,omitempty"`
+	SessionID  *int     `json:"sessionId,omitempty"` // Return session ID (new or existing)
 }
 
 func ChatHandler(c *gin.Context) {
@@ -171,12 +173,53 @@ func ChatHandler(c *gin.Context) {
 	c.Header("Transfer-Encoding", "chunked")
 	c.Header("X-Accel-Buffering", "no") // Disable buffering in Nginx if used
 
-	// Send initial metadata event (sources information)
+	// Step 5.5: Handle session persistence
+	var currentSessionID int
+	if req.SessionID != nil && *req.SessionID > 0 {
+		// Use existing session
+		currentSessionID = *req.SessionID
+		log.Printf("[Chat] Step 5.5: Using existing session ID: %d\n", currentSessionID)
+		
+		// Save user message to database
+		if err := db.SaveMessage(currentSessionID, "user", req.Question); err != nil {
+			log.Printf("[Chat] WARNING: Failed to save user message: %v\n", err)
+			// Continue anyway - don't fail the request
+		}
+	} else {
+		// Create new session with first 30 characters of question as title
+		title := req.Question
+		if len(title) > 30 {
+			title = title[:30] + "..."
+		}
+		if title == "" {
+			title = "New Chat"
+		}
+		
+		newSessionID, err := db.CreateSession(title)
+		if err != nil {
+			log.Printf("[Chat] WARNING: Failed to create session: %v\n", err)
+			// Continue without session - don't fail the request
+			currentSessionID = 0
+		} else {
+			currentSessionID = newSessionID
+			log.Printf("[Chat] Step 5.5: Created new session ID: %d (title: %s)\n", currentSessionID, title)
+			
+			// Save user message to database
+			if err := db.SaveMessage(currentSessionID, "user", req.Question); err != nil {
+				log.Printf("[Chat] WARNING: Failed to save user message: %v\n", err)
+			}
+		}
+	}
+
+	// Send initial metadata event (sources information + session ID)
 	// Kirim unique source file names, bukan content
 	sourcesData := map[string]interface{}{
 		"sources":    uniqueSources, // Nama file unik, bukan content
 		"sourceIds":  sourceIDs,
 		"type":       "metadata",
+	}
+	if currentSessionID > 0 {
+		sourcesData["sessionId"] = currentSessionID
 	}
 	sourcesJSON, _ := json.Marshal(sourcesData)
 	fmt.Fprintf(c.Writer, "event: metadata\ndata: %s\n\n", sourcesJSON)
@@ -277,18 +320,34 @@ func ChatHandler(c *gin.Context) {
 		}
 	}
 
+	// Step 8: Save AI response to database (if session exists)
+	if currentSessionID > 0 {
+		aiResponse := fullResponse.String()
+		if aiResponse != "" {
+			if err := db.SaveMessage(currentSessionID, "model", aiResponse); err != nil {
+				log.Printf("[Chat] WARNING: Failed to save AI message: %v\n", err)
+				// Continue anyway - message is already sent to user
+			} else {
+				log.Printf("[Chat] Step 8: Saved AI response to session %d\n", currentSessionID)
+			}
+		}
+	}
+
 	// Send completion event
-	log.Printf("[Chat] Step 8: Sending completion event...\n")
+	log.Printf("[Chat] Step 9: Sending completion event...\n")
 	completeData := map[string]interface{}{
-		"type":     "done",
+		"type":        "done",
 		"totalChunks": chunkCount,
-		"fullLength": fullResponse.Len(),
+		"fullLength":  fullResponse.Len(),
+	}
+	if currentSessionID > 0 {
+		completeData["sessionId"] = currentSessionID
 	}
 	completeJSON, _ := json.Marshal(completeData)
 	fmt.Fprintf(c.Writer, "event: done\ndata: %s\n\n", completeJSON)
 	c.Writer.Flush()
 
-	log.Printf("[Chat] ===== Chat streaming completed successfully (total: %d chars, %d chunks) =====\n", fullResponse.Len(), chunkCount)
+	log.Printf("[Chat] ===== Chat streaming completed successfully (total: %d chars, %d chunks, session: %d) =====\n", fullResponse.Len(), chunkCount, currentSessionID)
 	
 	// Return false to prevent Gin from writing additional JSON body
 	// Note: In Gin, we don't explicitly return false, we just don't call c.JSON

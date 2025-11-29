@@ -31,3 +31,13 @@ func DocumentRoutes(r *gin.Engine) {
 	}
 }
 
+func SessionRoutes(r *gin.Engine) {
+	api := r.Group("/api")
+	{
+		api.POST("/sessions", handlers.CreateSessionHandler)
+		api.GET("/sessions", handlers.GetSessionsHandler)
+		api.GET("/sessions/:id", handlers.GetSessionMessagesHandler)
+		api.DELETE("/sessions/:id", handlers.DeleteSessionHandler)
+	}
+}
+
