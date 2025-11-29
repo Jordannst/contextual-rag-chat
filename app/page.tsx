@@ -6,8 +6,8 @@ import ChatContainer from '@/components/chat/ChatContainer';
 import ChatBubble from '@/components/chat/ChatBubble';
 import ChatInput from '@/components/chat/ChatInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
-import PromptCard from '@/components/ui/PromptCard';
 import UploadCard from '@/components/upload/UploadCard';
+import DocumentList from '@/components/upload/DocumentList';
 
 interface Message {
   id: string;
@@ -18,55 +18,18 @@ interface Message {
     fileName: string;
     fileType: string;
   };
+  sources?: string[];
 }
 
-const defaultPrompts = [
-  {
-    id: '1',
-    title: 'Plan a trip',
-    description: 'Plan a detailed itinerary for a weekend getaway',
-    icon: (
-      <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
-      </svg>
-    ),
-  },
-  {
-    id: '2',
-    title: 'Write a story',
-    description: 'Create a short story about a magical adventure',
-    icon: (
-      <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-      </svg>
-    ),
-  },
-  {
-    id: '3',
-    title: 'Explain a concept',
-    description: 'Break down complex topics into simple explanations',
-    icon: (
-      <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-  },
-  {
-    id: '4',
-    title: 'Brainstorm ideas',
-    description: 'Generate creative ideas for your next project',
-    icon: (
-      <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-      </svg>
-    ),
-  },
-];
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; currentFileName?: string } | undefined>(undefined);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]); // Files selected but not yet uploaded
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const [documentListRefreshTrigger, setDocumentListRefreshTrigger] = useState(0);
 
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -197,6 +160,17 @@ export default function Home() {
                 sources = data.sources || [];
                 sourceIds = data.sourceIds || [];
                 console.log('Received metadata:', { sourcesCount: sources.length, sourceIds });
+                
+                // Save sources to AI message
+                if (sources.length > 0) {
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === aiMessageId
+                        ? { ...msg, sources: sources }
+                        : msg
+                    )
+                  );
+                }
               }
               // Handle chunk data (text streaming)
               else if (data.type === 'chunk' && data.chunk) {
@@ -298,71 +272,148 @@ export default function Home() {
     }
   };
 
-  const handlePromptClick = (prompt: typeof defaultPrompts[0]) => {
-    handleSendMessage(prompt.title);
-  };
 
   const handleNewChat = () => {
     setMessages([]);
   };
 
-  const handleFileUpload = async (file: File) => {
-    try {
-      // Create form data
-      const formData = new FormData();
-      formData.append('document', file);
+  // Handle file selection - only add to selectedFiles, don't upload yet
+  const handleFileSelect = (files: File[]) => {
+    if (files.length === 0) return;
+    
+    // Add new files to selectedFiles (avoid duplicates by filename)
+    setSelectedFiles((prev) => {
+      const existingNames = new Set(prev.map(f => f.name));
+      const newFiles = files.filter(f => !existingNames.has(f.name));
+      return [...prev, ...newFiles];
+    });
+  };
 
-      // Call upload API
-      const response = await fetch('http://localhost:5000/api/upload', {
-        method: 'POST',
-        body: formData,
+  // Remove file from selectedFiles
+  const handleRemoveFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Start processing - upload all selected files
+  const handleStartProcessing = async () => {
+    if (selectedFiles.length === 0) return;
+
+    // Set uploading state - this ensures UI stays on upload page
+    setIsUploading(true);
+    setUploadProgress({ current: 0, total: selectedFiles.length });
+
+    // Temporary accumulator for messages - DO NOT update state messages during loop
+    const newMessages: Message[] = [];
+    const errors: string[] = [];
+
+    // Process each file one by one
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      
+      // Update ONLY progress state during loop - this is safe and needed for progress bar
+      setUploadProgress({
+        current: i,
+        total: selectedFiles.length,
+        currentFileName: file.name,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to upload file');
+      try {
+        // Create form data
+        const formData = new FormData();
+        formData.append('document', file);
+
+        // Call upload API
+        const response = await fetch('http://localhost:5000/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || `Failed to upload ${file.name}`);
+        }
+
+        const data = await response.json();
+
+        // Get file type from file extension
+        const fileExtension = file.name.split('.').pop()?.toLowerCase() || 'file';
+        const fileType = fileExtension === 'pdf' ? 'pdf' : 
+                        ['doc', 'docx'].includes(fileExtension) ? 'document' :
+                        ['xls', 'xlsx'].includes(fileExtension) ? 'spreadsheet' :
+                        ['jpg', 'jpeg', 'png', 'gif'].includes(fileExtension) ? 'image' :
+                        'file';
+
+        // CRITICAL: Only push to local array, DO NOT call setMessages here
+        // This prevents React from rendering Chat View during upload process
+        const uploadMessage: Message = {
+          id: (Date.now() + i).toString(),
+          text: 'Uploaded a file',
+          isUser: true,
+          timestamp: new Date(),
+          attachment: {
+            fileName: file.name,
+            fileType: fileType,
+          },
+        };
+
+        newMessages.push(uploadMessage);
+      } catch (error) {
+        const errorMsg = `Error uploading ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        errors.push(errorMsg);
+        console.error(errorMsg, error);
+        // Continue with next file even if one fails
       }
-
-      const data = await response.json();
-
-      // Get file type from file extension
-      const fileExtension = file.name.split('.').pop()?.toLowerCase() || 'file';
-      const fileType = fileExtension === 'pdf' ? 'pdf' : 
-                      ['doc', 'docx'].includes(fileExtension) ? 'document' :
-                      ['xls', 'xlsx'].includes(fileExtension) ? 'spreadsheet' :
-                      ['jpg', 'jpeg', 'png', 'gif'].includes(fileExtension) ? 'image' :
-                      'file';
-
-      // Add user message with file attachment (not system message)
-      const uploadMessage: Message = {
-        id: Date.now().toString(),
-        text: 'Uploaded a file',
-        isUser: true,
-        timestamp: new Date(),
-        attachment: {
-          fileName: file.name,
-          fileType: fileType,
-        },
-      };
-
-      // Add AI confirmation message
-      const confirmationMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: `File berhasil diupload. Apa yang ingin kamu tanyakan tentang file ini?`,
-        isUser: false,
-        timestamp: new Date(),
-      };
-
-      setMessages([uploadMessage, confirmationMessage]);
-    } catch (error) {
-      const errorMessage: Message = {
-        id: Date.now().toString(),
-        text: `Error: ${error instanceof Error ? error.message : 'Failed to upload file'}`,
-        isUser: false,
-        timestamp: new Date(),
-      };
-      setMessages([errorMessage]);
     }
+
+    // Update progress to show completion (while isUploading is still true)
+    setUploadProgress({
+      current: selectedFiles.length,
+      total: selectedFiles.length,
+    });
+
+    // AFTER loop completes - prepare all messages in local array
+    const allMessages: Message[] = [...newMessages];
+    
+    // Add confirmation message if any files were uploaded
+    if (newMessages.length > 0) {
+      const confirmationMessage: Message = {
+        id: (Date.now() + selectedFiles.length + 1).toString(),
+        text: selectedFiles.length === 1 
+          ? `File berhasil diupload. Apa yang ingin kamu tanyakan tentang file ini?`
+          : `${newMessages.length} file berhasil diupload. Apa yang ingin kamu tanyakan tentang file-file ini?`,
+        isUser: false,
+        timestamp: new Date(),
+      };
+      allMessages.push(confirmationMessage);
+    }
+
+    // Add error message if any
+    if (errors.length > 0) {
+      const errorMessage: Message = {
+        id: (Date.now() + selectedFiles.length + 2).toString(),
+        text: `Beberapa file gagal diupload:\n${errors.join('\n')}`,
+        isUser: false,
+        timestamp: new Date(),
+      };
+      allMessages.push(errorMessage);
+    }
+
+    // Refresh document list after all uploads complete
+    setDocumentListRefreshTrigger((prev) => prev + 1);
+
+    // Clear selected files
+    setSelectedFiles([]);
+
+    // CRITICAL: Only update messages state AFTER loop completes
+    // This ensures React doesn't render Chat View during upload process
+    if (allMessages.length > 0) {
+      setMessages((prev) => [...prev, ...allMessages]);
+    }
+
+    // Reset upload state - this will trigger re-render and switch to Chat View
+    // because now isUploading is false AND messages.length > 0
+    setIsUploading(false);
+    setUploadProgress(undefined);
   };
 
   return (
@@ -385,49 +436,9 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col ml-16">
-        {messages.length === 0 ? (
-          /* Hero Section - Gemini 2025 Style */
-          <div className="flex-1 flex items-center justify-center px-4 py-12">
-            <div className="w-full max-w-[900px] mx-auto">
-              <div className="text-center mb-12 animate-fade-slide-up">
-                <h1 className="text-5xl sm:text-6xl font-bold text-neutral-100 mb-4 leading-tight tracking-tight transition-colors duration-300">
-                  Hello again 👋
-                </h1>
-                <p className="text-xl sm:text-2xl text-neutral-400 font-normal transition-colors duration-300">
-                  What can I help you explore today?
-                </p>
-              </div>
-
-              {/* Upload Card */}
-              <div className="max-w-2xl mx-auto mb-8 animate-fade-slide-up" style={{ animationDelay: '0.1s' }}>
-                <UploadCard
-                  onFileUpload={handleFileUpload}
-                  isUploading={false}
-                />
-              </div>
-
-              {/* Prompt Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl mx-auto animate-fade-slide-up" style={{ animationDelay: '0.2s' }}>
-                {defaultPrompts.map((prompt) => (
-                  <PromptCard
-                    key={prompt.id}
-                    title={prompt.title}
-                    description={prompt.description}
-                    icon={prompt.icon}
-                    onClick={() => handlePromptClick(prompt)}
-                  />
-                ))}
-              </div>
-
-              {/* Additional Info */}
-              <div className="mt-12 text-center animate-fade-slide-up" style={{ animationDelay: '0.3s' }}>
-                <p className="text-sm text-neutral-400 transition-colors duration-300">
-                  You can start a conversation or pick a suggestion
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : (
+        {/* CRITICAL: Chat Interface only appears if NOT uploading AND has messages */}
+        {/* This ensures UI stays on upload page during entire upload process */}
+        {!isUploading && messages.length > 0 ? (
           /* Chat Interface */
           <div className="flex-1 flex flex-col h-screen overflow-hidden bg-neutral-950 transition-colors duration-300">
             <ChatContainer>
@@ -447,6 +458,7 @@ export default function Home() {
                     isUser={message.isUser}
                     timestamp={message.timestamp}
                     attachment={message.attachment}
+                    sources={message.sources}
                   />
                 ))}
               {/* Show typing indicator only if loading and no AI message bubble is shown */}
@@ -459,6 +471,43 @@ export default function Home() {
             </ChatContainer>
 
             <ChatInput onSend={handleSendMessage} isLoading={isLoading} />
+          </div>
+        ) : (
+          /* Hero Section - Gemini 2025 Style */
+          <div className="flex-1 flex items-center justify-center px-4 py-12">
+            <div className="w-full max-w-[900px] mx-auto">
+              <div className="text-center mb-12 animate-fade-slide-up">
+                <h1 className="text-5xl sm:text-6xl font-bold text-neutral-100 mb-4 leading-tight tracking-tight transition-colors duration-300">
+                  Hello again 👋
+                </h1>
+                <p className="text-xl sm:text-2xl text-neutral-400 font-normal transition-colors duration-300">
+                  What can I help you explore today?
+                </p>
+              </div>
+
+              {/* Upload Card */}
+              <div className="max-w-2xl mx-auto mb-8 animate-fade-slide-up" style={{ animationDelay: '0.1s' }}>
+                <UploadCard
+                  onFileSelect={handleFileSelect}
+                  onStartProcessing={handleStartProcessing}
+                  onRemoveFile={handleRemoveFile}
+                  selectedFiles={selectedFiles}
+                  isUploading={isUploading}
+                  uploadProgress={uploadProgress}
+                />
+              </div>
+
+              {/* Document List */}
+              <div className="max-w-2xl mx-auto animate-fade-slide-up" style={{ animationDelay: '0.15s' }}>
+                <DocumentList 
+                  onDocumentDeleted={() => {
+                    // Optionally refresh or show notification when document is deleted
+                    console.log('Document deleted, list refreshed');
+                  }}
+                  refreshTrigger={documentListRefreshTrigger}
+                />
+              </div>
+            </div>
           </div>
         )}
       </main>

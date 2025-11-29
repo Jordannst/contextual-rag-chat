@@ -51,14 +51,20 @@ func GenerateChatResponse(userQuery string, contextDocs []string, history []mode
 	contextText := ""
 	if len(contextDocs) > 0 {
 		contextText = "KONTEKS DOKUMEN (RAG):\n\n"
-		for i, doc := range contextDocs {
-			contextText += fmt.Sprintf("Dokumen %d:\n%s\n\n", i+1, doc)
+		for _, doc := range contextDocs {
+			contextText += fmt.Sprintf("%s\n\n", doc)
 		}
 		contextText += "Gunakan informasi di atas untuk menjawab pertanyaan berikut. Jika informasi tidak cukup, katakan bahwa Anda tidak memiliki informasi yang cukup.\n\n"
 	}
 
 	// Build the prompt with history, context, and current question
-	prompt := "Anda adalah asisten AI.\n\n"
+	prompt := "Anda adalah asisten AI yang menjawab berdasarkan dokumen yang diberikan.\n\n"
+	prompt += "PENTING - ATURAN CITATION:\n"
+	prompt += "Setiap kali Anda memberikan fakta atau penjelasan, Anda WAJIB menyertakan nama dokumen sumbernya di akhir kalimat atau paragraf dalam tanda kurung.\n"
+	prompt += "Contoh format citation: '(nama_file.pdf)' atau '(file_lain.txt)'.\n"
+	prompt += "Gunakan nama file persis seperti yang tertera di label [Document: ...] di konteks dokumen di atas.\n"
+	prompt += "Jika informasi berasal dari gabungan beberapa file, sebutkan semuanya, contoh: '(file1.pdf, file2.txt)'.\n"
+	prompt += "Jangan membuat nama file sendiri, gunakan nama file yang ada di label [Document: ...].\n\n"
 	if historyText != "" {
 		prompt += historyText
 	}
@@ -66,7 +72,7 @@ func GenerateChatResponse(userQuery string, contextDocs []string, history []mode
 		prompt += contextText
 	}
 	prompt += fmt.Sprintf("PERTANYAAN USER SAAT INI:\n%s\n\n", userQuery)
-	prompt += "Jawablah pertanyaan user dengan mempertimbangkan riwayat percakapan di atas dan konteks dokumen."
+	prompt += "Jawablah pertanyaan user dengan mempertimbangkan riwayat percakapan di atas dan konteks dokumen. Ingat: WAJIB sertakan citation (nama file) di akhir setiap kalimat atau paragraf yang mengandung fakta dari dokumen."
 
 	// Generate response with fallback chain
 	var resp *genai.GenerateContentResponse
@@ -157,14 +163,20 @@ func StreamChatResponse(userQuery string, contextDocs []string, history []models
 	contextText := ""
 	if len(contextDocs) > 0 {
 		contextText = "KONTEKS DOKUMEN (RAG):\n\n"
-		for i, doc := range contextDocs {
-			contextText += fmt.Sprintf("Dokumen %d:\n%s\n\n", i+1, doc)
+		for _, doc := range contextDocs {
+			contextText += fmt.Sprintf("%s\n\n", doc)
 		}
 		contextText += "Gunakan informasi di atas untuk menjawab pertanyaan berikut. Jika informasi tidak cukup, katakan bahwa Anda tidak memiliki informasi yang cukup.\n\n"
 	}
 
 	// Build the prompt with history, context, and current question
-	prompt := "Anda adalah asisten AI.\n\n"
+	prompt := "Anda adalah asisten AI yang menjawab berdasarkan dokumen yang diberikan.\n\n"
+	prompt += "PENTING - ATURAN CITATION:\n"
+	prompt += "Setiap kali Anda memberikan fakta atau penjelasan, Anda WAJIB menyertakan nama dokumen sumbernya di akhir kalimat atau paragraf dalam tanda kurung.\n"
+	prompt += "Contoh format citation: '(nama_file.pdf)' atau '(file_lain.txt)'.\n"
+	prompt += "Gunakan nama file persis seperti yang tertera di label [Document: ...] di konteks dokumen di atas.\n"
+	prompt += "Jika informasi berasal dari gabungan beberapa file, sebutkan semuanya, contoh: '(file1.pdf, file2.txt)'.\n"
+	prompt += "Jangan membuat nama file sendiri, gunakan nama file yang ada di label [Document: ...].\n\n"
 	if historyText != "" {
 		prompt += historyText
 	}
@@ -172,7 +184,7 @@ func StreamChatResponse(userQuery string, contextDocs []string, history []models
 		prompt += contextText
 	}
 	prompt += fmt.Sprintf("PERTANYAAN USER SAAT INI:\n%s\n\n", userQuery)
-	prompt += "Jawablah pertanyaan user dengan mempertimbangkan riwayat percakapan di atas dan konteks dokumen."
+	prompt += "Jawablah pertanyaan user dengan mempertimbangkan riwayat percakapan di atas dan konteks dokumen. Ingat: WAJIB sertakan citation (nama file) di akhir setiap kalimat atau paragraf yang mengandung fakta dari dokumen."
 
 	// Get the generative model
 	// Using gemini-2.0-flash (confirmed available and supports generateContent)

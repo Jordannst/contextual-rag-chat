@@ -99,10 +99,12 @@ func SearchSimilarDocuments(queryEmbedding []float32, limit int) ([]Document, er
 	// Convert []float32 to pgvector.Vector
 	queryVector := pgvector.NewVector(queryEmbedding)
 
-	// Query using cosine distance (1 - cosine similarity)
+	// Query using cosine distance directly
+	// embedding <=> $1 returns cosine distance (0 = identical, 2 = opposite)
+	// Smaller distance = more similar
 	// ORDER BY embedding <=> $1 means cosine distance (ascending = most similar)
 	query := `
-		SELECT id, content, source_file, 1 - (embedding <=> $1) as distance
+		SELECT id, content, source_file, (embedding <=> $1) as distance
 		FROM documents
 		ORDER BY embedding <=> $1
 		LIMIT $2
@@ -133,5 +135,72 @@ func SearchSimilarDocuments(queryEmbedding []float32, limit int) ([]Document, er
 	}
 
 	return documents, nil
+}
+
+// GetUniqueDocuments returns a list of unique source file names from the database
+func GetUniqueDocuments() ([]string, error) {
+	if Pool == nil {
+		return nil, fmt.Errorf("database pool is not initialized")
+	}
+
+	ctx := context.Background()
+
+	// Query to get distinct source_file names, excluding NULL and empty strings
+	query := `
+		SELECT DISTINCT source_file
+		FROM documents
+		WHERE source_file IS NOT NULL AND source_file != ''
+		ORDER BY source_file
+	`
+
+	rows, err := Pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query unique documents: %w", err)
+	}
+	defer rows.Close()
+
+	var documents []string
+	for rows.Next() {
+		var sourceFile string
+		if err := rows.Scan(&sourceFile); err != nil {
+			return nil, fmt.Errorf("failed to scan source file: %w", err)
+		}
+		documents = append(documents, sourceFile)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating documents: %w", err)
+	}
+
+	// Return empty slice if no documents found (not an error)
+	if len(documents) == 0 {
+		return []string{}, nil
+	}
+
+	return documents, nil
+}
+
+// DeleteDocument deletes all chunks belonging to a specific source file
+func DeleteDocument(fileName string) error {
+	if Pool == nil {
+		return fmt.Errorf("database pool is not initialized")
+	}
+
+	if fileName == "" {
+		return fmt.Errorf("file name cannot be empty")
+	}
+
+	ctx := context.Background()
+
+	// Delete all documents with matching source_file
+	result, err := Pool.Exec(ctx, "DELETE FROM documents WHERE source_file = $1", fileName)
+	if err != nil {
+		return fmt.Errorf("failed to delete document: %w", err)
+	}
+
+	rowsAffected := result.RowsAffected()
+	fmt.Printf("Deleted %d chunks for file: %s\n", rowsAffected, fileName)
+
+	return nil
 }
 

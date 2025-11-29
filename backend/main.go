@@ -64,6 +64,9 @@ func main() {
 	// Chat routes
 	routes.ChatRoutes(r)
 
+	// Document management routes
+	routes.DocumentRoutes(r)
+
 	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {

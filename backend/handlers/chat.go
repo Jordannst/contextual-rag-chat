@@ -66,15 +66,53 @@ func ChatHandler(c *gin.Context) {
 	}
 	log.Printf("[Chat] Step 3: Dokumen ditemukan: %d dokumen\n", len(similarDocs))
 
-	// Step 4: Extract content from similar documents
+	// Step 4: Extract content from similar documents and collect unique source files
+	// Apply similarity threshold to filter out irrelevant results
+	const similarityThreshold = 0.5 // Cosine distance threshold (0 = identical, 2 = opposite)
+	// Documents with distance < 0.5 are considered relevant
+	// Documents with distance >= 0.5 are too dissimilar and should be excluded
+	
 	var contextDocs []string
 	var sourceIDs []int32
+	uniqueSourceFiles := make(map[string]bool) // Map untuk deduplikasi nama file
+	var uniqueSources []string                  // List nama file unik
+	var filteredCount int                       // Count of documents filtered out
+	
 	for i, doc := range similarDocs {
-		contextDocs = append(contextDocs, doc.Content)
+		// Apply similarity threshold filter
+		// Only include documents with distance below threshold (more similar)
+		if doc.Distance >= similarityThreshold {
+			log.Printf("[Chat] Step 4: Dokumen %d - ID: %d, SourceFile: %s, Distance: %.4f (FILTERED OUT - too dissimilar)\n", 
+				i+1, doc.ID, doc.SourceFile, doc.Distance)
+			filteredCount++
+			continue // Skip this document - not relevant enough
+		}
+		
+		// Document passed threshold - include in context and sources
+		// Format context dengan metadata nama file untuk inline citations
+		// Format: [Document: nama_file.pdf]\nIsi konten: ... potongan teks ...
+		var formattedContext string
+		if doc.SourceFile != "" {
+			formattedContext = fmt.Sprintf("[Document: %s]\n%s", doc.SourceFile, doc.Content)
+		} else {
+			// Fallback jika source_file kosong
+			formattedContext = fmt.Sprintf("[Document: unknown]\n%s", doc.Content)
+		}
+		contextDocs = append(contextDocs, formattedContext)
 		sourceIDs = append(sourceIDs, doc.ID)
-		log.Printf("[Chat] Step 4: Dokumen %d - ID: %d, Content length: %d, Distance: %.4f\n", i+1, doc.ID, len(doc.Content), doc.Distance)
+		
+		// Kumpulkan source file dengan deduplikasi
+		// Hanya masukkan jika: (1) tidak kosong/null, (2) belum ada di map
+		if doc.SourceFile != "" && !uniqueSourceFiles[doc.SourceFile] {
+			uniqueSourceFiles[doc.SourceFile] = true
+			uniqueSources = append(uniqueSources, doc.SourceFile)
+		}
+		
+		log.Printf("[Chat] Step 4: Dokumen %d - ID: %d, Content length: %d, SourceFile: %s, Distance: %.4f (INCLUDED)\n", 
+			i+1, doc.ID, len(doc.Content), doc.SourceFile, doc.Distance)
 	}
-	log.Printf("[Chat] Step 4: Total context docs: %d\n", len(contextDocs))
+	log.Printf("[Chat] Step 4: Total context docs: %d, Unique source files: %d, Filtered out: %d\n", 
+		len(contextDocs), len(uniqueSources), filteredCount)
 
 	// Step 5: Set SSE headers for streaming
 	log.Printf("[Chat] Step 5: Setting up SSE headers...\n")
@@ -85,8 +123,9 @@ func ChatHandler(c *gin.Context) {
 	c.Header("X-Accel-Buffering", "no") // Disable buffering in Nginx if used
 
 	// Send initial metadata event (sources information)
+	// Kirim unique source file names, bukan content
 	sourcesData := map[string]interface{}{
-		"sources":    contextDocs,
+		"sources":    uniqueSources, // Nama file unik, bukan content
 		"sourceIds":  sourceIDs,
 		"type":       "metadata",
 	}
