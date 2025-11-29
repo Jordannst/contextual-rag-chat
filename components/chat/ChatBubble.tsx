@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { motion } from 'framer-motion';
+import { Copy, Check, RefreshCw } from 'lucide-react';
 
 interface ChatBubbleProps {
   message: string;
@@ -14,6 +15,8 @@ interface ChatBubbleProps {
   };
   sources?: string[];
   onViewDocument?: (fileName: string) => void;
+  onRegenerate?: () => void;
+  isLastMessage?: boolean;
 }
 
 // Helper function to process message and replace citations with markdown code spans
@@ -66,7 +69,18 @@ const BookIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-export default function ChatBubble({ message, isUser, timestamp, attachment, sources, onViewDocument }: ChatBubbleProps) {
+export default function ChatBubble({ message, isUser, timestamp, attachment, sources, onViewDocument, onRegenerate, isLastMessage = false }: ChatBubbleProps) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
   // Filter sources to only include those that are actually mentioned in the message content
   // This prevents showing References section for small talk responses without citations
   const getUsedSources = (): string[] => {
@@ -152,7 +166,7 @@ export default function ChatBubble({ message, isUser, timestamp, attachment, sou
       <div
           className={`
           max-w-[85%] sm:max-w-[75%] rounded-3xl px-5 py-4
-          transition-colors duration-300
+          transition-colors duration-300 group relative
           ${isUser
             ? 'bg-gradient-to-br from-blue-600/20 to-blue-600/10 backdrop-blur-sm border border-blue-500/20 text-neutral-100 shadow-md'
             : 'bg-neutral-800/40 backdrop-blur-sm border border-white/5 text-neutral-100 shadow-md hover:shadow-lg'
@@ -250,7 +264,7 @@ export default function ChatBubble({ message, isUser, timestamp, attachment, sou
             
             {/* Sources Section - Only show for AI messages with sources that are actually cited in the message */}
             {usedSources.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-neutral-700">
+              <div className="mt-4 pt-4 border-t border-white/10">
                 <div className="flex items-center gap-2 mb-2">
                   <BookIcon className="w-4 h-4 text-neutral-400" />
                   <span className="text-[12px] font-medium text-neutral-400 uppercase tracking-wide">
@@ -271,6 +285,33 @@ export default function ChatBubble({ message, isUser, timestamp, attachment, sou
                 </div>
               </div>
             )}
+
+            {/* Message Actions Bar - Only for AI messages */}
+            <div className="absolute -bottom-1 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
+              {/* Copy Button */}
+              <button
+                onClick={handleCopy}
+                className="p-1.5 rounded-lg bg-neutral-800/80 backdrop-blur-md border border-white/10 hover:bg-white/10 text-neutral-400 hover:text-neutral-100 transition-all duration-200 shadow-lg"
+                title="Copy message"
+              >
+                {copied ? (
+                  <Check className="w-3.5 h-3.5 text-green-400" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+              </button>
+
+              {/* Regenerate Button - Only show for last message */}
+              {isLastMessage && onRegenerate && (
+                <button
+                  onClick={onRegenerate}
+                  className="p-1.5 rounded-lg bg-neutral-800/80 backdrop-blur-md border border-white/10 hover:bg-white/10 text-neutral-400 hover:text-neutral-100 transition-all duration-200 shadow-lg"
+                  title="Regenerate response"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </>
         )}
       </div>

@@ -207,6 +207,43 @@ export default function Home() {
     setMessages([]);
   };
 
+  // Function to handle regenerate - regenerate the last AI response
+  const handleRegenerate = () => {
+    // Find the last user message (the question that was asked)
+    const lastUserMessage = [...messages].reverse().find(msg => msg.isUser);
+    
+    if (!lastUserMessage) {
+      console.warn('No user message found to regenerate');
+      return;
+    }
+
+    // Remove the last AI message (the one we want to regenerate)
+    setMessages((prev) => {
+      // Find the index of the last non-user message
+      let lastAIIndex = -1;
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (!prev[i].isUser) {
+          lastAIIndex = i;
+          break;
+        }
+      }
+      
+      // If found, remove it
+      if (lastAIIndex >= 0) {
+        return prev.filter((_, index) => index !== lastAIIndex);
+      }
+      
+      return prev;
+    });
+
+    // Get the selectedFiles from the last user message if available
+    // Note: We'll need to track this, but for now we'll regenerate without file filter
+    // You can enhance this later to remember the file filter
+    
+    // Call handleSendMessage with the last user question
+    handleSendMessage(lastUserMessage.text);
+  };
+
   const handleSendMessage = async (text: string, selectedFiles?: string[]) => {
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -654,17 +691,26 @@ export default function Home() {
                   const isLastMessage = messages[messages.length - 1]?.id === message.id;
                   return message.text.trim() || (isLastMessage && isLoading);
                 })
-                .map((message) => (
-                  <ChatBubble
-                    key={message.id}
-                    message={message.text || (isLoading && messages[messages.length - 1]?.id === message.id ? '' : message.text)}
-                    isUser={message.isUser}
-                    timestamp={message.timestamp}
-                    attachment={message.attachment}
-                    sources={message.sources}
-                    onViewDocument={(fileName) => setSelectedDocument(fileName)}
-                  />
-                ))}
+                .map((message, index) => {
+                  // Check if this is the last AI message (for regenerate button)
+                  const isLastAIMessage = !message.isUser && 
+                    (index === messages.length - 1 || 
+                     (index < messages.length - 1 && messages[index + 1]?.isUser));
+                  
+                  return (
+                    <ChatBubble
+                      key={message.id}
+                      message={message.text || (isLoading && index === messages.length - 1 ? '' : message.text)}
+                      isUser={message.isUser}
+                      timestamp={message.timestamp}
+                      attachment={message.attachment}
+                      sources={message.sources}
+                      onViewDocument={(fileName) => setSelectedDocument(fileName)}
+                      onRegenerate={!message.isUser ? handleRegenerate : undefined}
+                      isLastMessage={isLastAIMessage}
+                    />
+                  );
+                })}
               {/* Show typing indicator only if loading and no AI message bubble is shown */}
               {isLoading && 
                messages.length > 0 && 
