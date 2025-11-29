@@ -83,18 +83,52 @@ export default function Home() {
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
-    // Simulasi response AI
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    try {
+      // Convert messages to history format for backend
+      // Include all previous messages (before the current user message)
+      const history = messages.map((msg) => ({
+        role: msg.isUser ? 'user' : 'model',
+        content: msg.text,
+      }));
 
-    const aiResponse: Message = {
-      id: (Date.now() + 1).toString(),
-      text: `I understand you're asking about "${text}". This is a simulated response. In a real implementation, this would connect to your RAG API to provide answers based on your uploaded documents.\n\n**Key Features:**\n- Semantic search within documents\n- Context-aware responses\n- Accurate answers based on your content\n\nFeel free to ask more specific questions!`,
-      isUser: false,
-      timestamp: new Date(),
-    };
+      // Call chat API with history
+      const response = await fetch('http://localhost:5000/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          question: text,
+          history: history,
+        }),
+      });
 
-    setMessages((prev) => [...prev, aiResponse]);
-    setIsLoading(false);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to get response');
+      }
+
+      const data = await response.json();
+
+      const aiResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        text: data.response || 'No response received',
+        isUser: false,
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev, aiResponse]);
+    } catch (error) {
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: `Error: ${error instanceof Error ? error.message : 'Failed to get response from server'}`,
+        isUser: false,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handlePromptClick = (prompt: typeof defaultPrompts[0]) => {
@@ -106,17 +140,41 @@ export default function Home() {
   };
 
   const handleFileUpload = async (file: File) => {
-    // Simulasi upload
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    // Tambahkan pesan selamat datang
-    const welcomeMessage: Message = {
-      id: Date.now().toString(),
-      text: `Dokumen "${file.name}" berhasil diunggah! Anda sekarang dapat menanyakan sesuatu tentang dokumen ini.`,
-      isUser: false,
-      timestamp: new Date(),
-    };
-    setMessages([welcomeMessage]);
+    try {
+      // Create form data
+      const formData = new FormData();
+      formData.append('document', file);
+
+      // Call upload API
+      const response = await fetch('http://localhost:5000/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to upload file');
+      }
+
+      const data = await response.json();
+
+      // Tambahkan pesan selamat datang
+      const welcomeMessage: Message = {
+        id: Date.now().toString(),
+        text: data.message || `Dokumen "${file.name}" berhasil diunggah! Anda sekarang dapat menanyakan sesuatu tentang dokumen ini.`,
+        isUser: false,
+        timestamp: new Date(),
+      };
+      setMessages([welcomeMessage]);
+    } catch (error) {
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        text: `Error: ${error instanceof Error ? error.message : 'Failed to upload file'}`,
+        isUser: false,
+        timestamp: new Date(),
+      };
+      setMessages([errorMessage]);
+    }
   };
 
   return (
