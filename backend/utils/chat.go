@@ -121,3 +121,70 @@ func GenerateChatResponse(userQuery string, contextDocs []string, history []mode
 	return responseText.String(), nil
 }
 
+// StreamChatResponse generates a streaming chat response using Gemini with RAG context and conversation history
+// Returns an iterator for streaming responses
+func StreamChatResponse(userQuery string, contextDocs []string, history []models.ChatMessage) (*genai.GenerateContentResponseIterator, error) {
+	// Get API key from environment variable
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	if apiKey == "" {
+		return nil, fmt.Errorf("GEMINI_API_KEY is not set in environment variables")
+	}
+
+	// Initialize Gemini client
+	ctx := context.Background()
+	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
+	}
+	// Note: Don't defer Close() here as the iterator needs the client to stay alive
+	// The caller should handle cleanup
+
+	// Build conversation history
+	historyText := ""
+	if len(history) > 0 {
+		historyText = "RIWAYAT PERCAKAPAN:\n\n"
+		for _, msg := range history {
+			if msg.Role == "user" {
+				historyText += fmt.Sprintf("User: %s\n", msg.Content)
+			} else if msg.Role == "model" {
+				historyText += fmt.Sprintf("Model: %s\n", msg.Content)
+			}
+		}
+		historyText += "\n"
+	}
+
+	// Build context from retrieved documents
+	contextText := ""
+	if len(contextDocs) > 0 {
+		contextText = "KONTEKS DOKUMEN (RAG):\n\n"
+		for i, doc := range contextDocs {
+			contextText += fmt.Sprintf("Dokumen %d:\n%s\n\n", i+1, doc)
+		}
+		contextText += "Gunakan informasi di atas untuk menjawab pertanyaan berikut. Jika informasi tidak cukup, katakan bahwa Anda tidak memiliki informasi yang cukup.\n\n"
+	}
+
+	// Build the prompt with history, context, and current question
+	prompt := "Anda adalah asisten AI.\n\n"
+	if historyText != "" {
+		prompt += historyText
+	}
+	if contextText != "" {
+		prompt += contextText
+	}
+	prompt += fmt.Sprintf("PERTANYAAN USER SAAT INI:\n%s\n\n", userQuery)
+	prompt += "Jawablah pertanyaan user dengan mempertimbangkan riwayat percakapan di atas dan konteks dokumen."
+
+	// Get the generative model
+	// Using gemini-2.0-flash (confirmed available and supports generateContent)
+	// Fallback chain: gemini-2.0-flash-001 -> gemini-flash-latest -> gemini-2.5-flash
+	model := client.GenerativeModel("gemini-2.0-flash")
+
+	// Generate streaming response
+	iter := model.GenerateContentStream(ctx, genai.Text(prompt))
+	
+	// Note: If streaming fails, we might need to handle fallback
+	// For now, we'll return the iterator and let the handler deal with errors
+	
+	return iter, nil
+}
+

@@ -14,6 +14,10 @@ interface Message {
   text: string;
   isUser: boolean;
   timestamp: Date;
+  attachment?: {
+    fileName: string;
+    fileType: string;
+  };
 }
 
 const defaultPrompts = [
@@ -83,6 +87,17 @@ export default function Home() {
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
+    // Create initial AI message that will be updated incrementally
+    const aiMessageId = (Date.now() + 1).toString();
+    const aiMessage: Message = {
+      id: aiMessageId,
+      text: '',
+      isUser: false,
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, aiMessage]);
+
     try {
       // Convert messages to history format for backend
       // Include all previous messages (before the current user message)
@@ -91,7 +106,7 @@ export default function Home() {
         content: msg.text,
       }));
 
-      // Call chat API with history
+      // Call chat API with streaming
       const response = await fetch('http://localhost:5000/api/chat', {
         method: 'POST',
         headers: {
@@ -104,30 +119,182 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to get response');
+        // Try to parse error response
+        try {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to get response');
+        } catch {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
       }
 
-      const data = await response.json();
+      // Check if response is streamable
+      if (!response.body) {
+        throw new Error('Response body is null');
+      }
 
-      const aiResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        text: data.response || 'No response received',
-        isUser: false,
-        timestamp: new Date(),
-      };
+      // Verify content type is SSE
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('text/event-stream')) {
+        // Fallback: try to parse as JSON (non-streaming response)
+        const errorData = await response.json();
+        throw new Error(errorData.message || errorData.error || 'Unexpected response format');
+      }
 
-      setMessages((prev) => [...prev, aiResponse]);
+      // Get reader from response stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      // Buffer to accumulate partial SSE messages
+      let buffer = '';
+      let sources: string[] = [];
+      let sourceIds: number[] = [];
+
+      // Read stream chunks
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          break;
+        }
+
+        // Decode chunk
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+
+        // Process complete SSE messages (separated by double newline)
+        const messages = buffer.split('\n\n');
+        buffer = messages.pop() || ''; // Keep incomplete message in buffer
+
+        for (const message of messages) {
+          if (!message.trim()) {
+            continue;
+          }
+
+          // Parse SSE message format:
+          // event: <type>\ndata: <json>\n\n
+          // or just: data: <json>\n\n
+          let eventType: string | null = null;
+          let dataLine: string | null = null;
+
+          const lines = message.split('\n');
+          for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (trimmedLine.startsWith('event: ')) {
+              eventType = trimmedLine.slice(7).trim();
+            } else if (trimmedLine.startsWith('data: ')) {
+              dataLine = trimmedLine.slice(6).trim();
+            }
+          }
+
+          // Parse data if available
+          if (dataLine) {
+            try {
+              const data = JSON.parse(dataLine);
+
+              // Handle metadata event (sources info)
+              if (eventType === 'metadata' || data.type === 'metadata') {
+                sources = data.sources || [];
+                sourceIds = data.sourceIds || [];
+                console.log('Received metadata:', { sourcesCount: sources.length, sourceIds });
+              }
+              // Handle chunk data (text streaming)
+              else if (data.type === 'chunk' && data.chunk) {
+                const chunkText = data.chunk;
+                if (chunkText) {
+                  // Append chunk text to AI message in real-time
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === aiMessageId
+                        ? { ...msg, text: msg.text + chunkText }
+                        : msg
+                    )
+                  );
+                }
+              }
+              // Handle done event (streaming completed)
+              else if (eventType === 'done' || data.type === 'done') {
+                console.log('Streaming completed:', {
+                  totalChunks: data.totalChunks,
+                  fullLength: data.fullLength,
+                });
+                break; // Exit the message processing loop
+              }
+              // Handle error event
+              else if (eventType === 'error' || data.type === 'error') {
+                throw new Error(data.message || data.error || 'Streaming error occurred');
+              }
+              // Fallback: if no type but has chunk field, treat as chunk
+              else if (data.chunk && typeof data.chunk === 'string') {
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === aiMessageId
+                      ? { ...msg, text: msg.text + data.chunk }
+                      : msg
+                  )
+                );
+              }
+            } catch (parseError) {
+              // If JSON parsing fails, log but don't break the stream
+              console.error('Error parsing SSE data:', parseError, 'Raw data:', dataLine);
+            }
+          }
+        }
+      }
+
+      // Process any remaining buffer
+      if (buffer.trim()) {
+        const lines = buffer.split('\n');
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (trimmedLine.startsWith('data: ')) {
+            const dataLine = trimmedLine.slice(6).trim();
+            try {
+              const data = JSON.parse(dataLine);
+              if (data.type === 'chunk' && data.chunk) {
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === aiMessageId
+                      ? { ...msg, text: msg.text + data.chunk }
+                      : msg
+                  )
+                );
+              }
+            } catch (parseError) {
+              console.error('Error parsing final buffer:', parseError);
+            }
+            break;
+          }
+        }
+      }
+
+      // Final check: if AI message is still empty, show error
+      setMessages((prev) => {
+        const updated = prev.map((msg) =>
+          msg.id === aiMessageId && !msg.text.trim()
+            ? {
+                ...msg,
+                text: 'No response received from the server.',
+              }
+            : msg
+        );
+        return updated;
+      });
     } catch (error) {
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: `Error: ${error instanceof Error ? error.message : 'Failed to get response from server'}`,
-        isUser: false,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      // Remove empty AI message and add error message
+      setMessages((prev) => {
+        const filtered = prev.filter((msg) => msg.id !== aiMessageId);
+        const errorMessage: Message = {
+          id: (Date.now() + 2).toString(),
+          text: `Error: ${error instanceof Error ? error.message : 'Failed to get response from server'}`,
+          isUser: false,
+          timestamp: new Date(),
+        };
+        return [...filtered, errorMessage];
+      });
     } finally {
       setIsLoading(false);
+      scrollToBottom();
     }
   };
 
@@ -158,14 +325,35 @@ export default function Home() {
 
       const data = await response.json();
 
-      // Tambahkan pesan selamat datang
-      const welcomeMessage: Message = {
+      // Get file type from file extension
+      const fileExtension = file.name.split('.').pop()?.toLowerCase() || 'file';
+      const fileType = fileExtension === 'pdf' ? 'pdf' : 
+                      ['doc', 'docx'].includes(fileExtension) ? 'document' :
+                      ['xls', 'xlsx'].includes(fileExtension) ? 'spreadsheet' :
+                      ['jpg', 'jpeg', 'png', 'gif'].includes(fileExtension) ? 'image' :
+                      'file';
+
+      // Add user message with file attachment (not system message)
+      const uploadMessage: Message = {
         id: Date.now().toString(),
-        text: data.message || `Dokumen "${file.name}" berhasil diunggah! Anda sekarang dapat menanyakan sesuatu tentang dokumen ini.`,
+        text: 'Uploaded a file',
+        isUser: true,
+        timestamp: new Date(),
+        attachment: {
+          fileName: file.name,
+          fileType: fileType,
+        },
+      };
+
+      // Add AI confirmation message
+      const confirmationMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: `File berhasil diupload. Apa yang ingin kamu tanyakan tentang file ini?`,
         isUser: false,
         timestamp: new Date(),
       };
-      setMessages([welcomeMessage]);
+
+      setMessages([uploadMessage, confirmationMessage]);
     } catch (error) {
       const errorMessage: Message = {
         id: Date.now().toString(),
@@ -243,15 +431,30 @@ export default function Home() {
           /* Chat Interface */
           <div className="flex-1 flex flex-col h-screen overflow-hidden bg-neutral-950 transition-colors duration-300">
             <ChatContainer>
-              {messages.map((message) => (
-                <ChatBubble
-                  key={message.id}
-                  message={message.text}
-                  isUser={message.isUser}
-                  timestamp={message.timestamp}
-                />
-              ))}
-              {isLoading && <TypingIndicator />}
+              {messages
+                .filter((message) => {
+                  // Show user messages always
+                  // Show AI messages only if they have text or if currently streaming
+                  if (message.isUser) return true;
+                  // Show AI message if it has text, or if it's the last message and currently loading (streaming)
+                  const isLastMessage = messages[messages.length - 1]?.id === message.id;
+                  return message.text.trim() || (isLastMessage && isLoading);
+                })
+                .map((message) => (
+                  <ChatBubble
+                    key={message.id}
+                    message={message.text || (isLoading && messages[messages.length - 1]?.id === message.id ? '' : message.text)}
+                    isUser={message.isUser}
+                    timestamp={message.timestamp}
+                    attachment={message.attachment}
+                  />
+                ))}
+              {/* Show typing indicator only if loading and no AI message bubble is shown */}
+              {isLoading && 
+               messages.length > 0 && 
+               messages[messages.length - 1]?.isUser && (
+                <TypingIndicator />
+              )}
               <div ref={chatEndRef} />
             </ChatContainer>
 
