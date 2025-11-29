@@ -54,7 +54,7 @@ export default function Sidebar({
 
   return (
     <aside 
-      className={`fixed left-0 top-0 h-screen flex flex-col border-r border-neutral-800 bg-neutral-950/80 backdrop-blur-sm z-40 transition-all duration-300 ${
+      className={`fixed left-0 top-0 h-screen flex flex-col border-r border-white/5 bg-neutral-900/60 backdrop-blur-lg z-40 transition-all duration-300 ${
         isExpanded ? 'w-64' : 'w-16'
       }`}
       onMouseEnter={() => setIsExpanded(true)}
@@ -72,8 +72,8 @@ export default function Sidebar({
                 w-10 h-10 rounded-full flex items-center justify-center
                 transition-colors duration-300
                 ${item.active 
-                  ? 'bg-neutral-800 text-neutral-100' 
-                  : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100'
+                  ? 'bg-neutral-800/60 backdrop-blur-sm text-neutral-100 border border-white/5' 
+                  : 'text-neutral-400 hover:bg-neutral-800/60 hover:backdrop-blur-sm hover:text-neutral-100 border border-transparent hover:border-white/5'
                 }
               `}
             >
@@ -82,9 +82,9 @@ export default function Sidebar({
             
             {/* Tooltip on hover (when collapsed) */}
             {!isExpanded && hoveredItem === item.id && (
-              <div className="absolute left-full ml-3 px-3 py-1.5 bg-neutral-800 text-neutral-100 text-xs rounded-lg whitespace-nowrap pointer-events-none animate-fade-slide-up border border-neutral-700 shadow-lg transition-colors duration-300">
+              <div className="absolute left-full ml-3 px-3 py-1.5 bg-neutral-900/80 backdrop-blur-md text-neutral-100 text-xs rounded-lg whitespace-nowrap pointer-events-none animate-fade-slide-up border border-white/10 shadow-lg transition-colors duration-300">
                 {item.label}
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-neutral-800 rotate-45"></div>
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-neutral-900/80 backdrop-blur-md border-l border-b border-white/10 rotate-45"></div>
               </div>
             )}
           </div>
@@ -92,7 +92,7 @@ export default function Sidebar({
       </div>
 
       {/* Divider */}
-      <div className="border-t border-neutral-800 my-2"></div>
+      <div className="border-t border-white/5 my-2"></div>
 
       {/* Chat History Section */}
       <div className="flex-1 overflow-y-auto px-2">
@@ -112,8 +112,8 @@ export default function Sidebar({
                 group relative flex items-center gap-2 px-2 py-2 rounded-lg
                 transition-colors duration-200
                 ${currentSessionId === session.id
-                  ? 'bg-neutral-800 text-neutral-100'
-                  : 'text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-100'
+                  ? 'bg-neutral-800/60 backdrop-blur-sm text-neutral-100 border border-white/5'
+                  : 'text-neutral-400 hover:bg-neutral-800/50 hover:backdrop-blur-sm hover:text-neutral-100 border border-transparent hover:border-white/5'
                 }
               `}
               onMouseEnter={() => setHoveredSessionId(session.id)}

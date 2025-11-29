@@ -85,16 +85,15 @@ export default function ChatInput({
   };
 
   return (
-    <div className="sticky bottom-0 bg-neutral-950/80 backdrop-blur-xl border-t border-neutral-800 py-4 px-4 transition-colors duration-300">
+    <div className="sticky bottom-0 bg-transparent backdrop-blur-xl border-t border-white/5 py-4 px-4 transition-colors duration-300">
       <div className="max-w-screen-md mx-auto">
         <form onSubmit={handleSubmit} className="relative">
           <div
             className={`
-              relative flex items-end gap-3 bg-neutral-900 rounded-full border transition-all duration-300
-              backdrop-blur-xl
+              relative flex items-end gap-3 bg-neutral-900/60 backdrop-blur-lg rounded-full border border-white/5 transition-all duration-300
               ${isFocused 
-                ? 'border-blue-400 shadow-[0_0_0_4px_rgba(96,165,250,0.25)]' 
-                : 'border-neutral-700 shadow-sm'
+                ? 'border-blue-400/50 shadow-[0_0_0_4px_rgba(96,165,250,0.15)] shadow-lg' 
+                : 'shadow-md'
               }
             `}
           >
@@ -174,7 +173,7 @@ export default function ChatInput({
             {showFilter && availableDocuments.length > 0 && (
               <div
                 ref={filterRef}
-                className="absolute bottom-full left-0 mb-2 w-64 bg-neutral-900 border border-neutral-700 rounded-lg shadow-xl z-50 max-h-80 overflow-hidden flex flex-col"
+                className="absolute bottom-full left-0 mb-2 w-64 bg-neutral-900/80 backdrop-blur-lg border border-white/10 rounded-lg shadow-xl z-50 max-h-80 overflow-hidden flex flex-col"
               >
                 <div className="p-3 border-b border-neutral-700 flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-neutral-100">Filter Documents</h3>

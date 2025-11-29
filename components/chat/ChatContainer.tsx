@@ -19,7 +19,7 @@ export default function ChatContainer({ children }: ChatContainerProps) {
   return (
     <div
       ref={containerRef}
-      className="flex-1 overflow-y-auto px-4 py-10 bg-neutral-950 transition-colors duration-300"
+      className="flex-1 overflow-y-auto px-4 py-10 bg-transparent transition-colors duration-300"
       style={{ scrollBehavior: 'smooth' }}
     >
       <div className="max-w-screen-md mx-auto">

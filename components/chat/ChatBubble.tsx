@@ -2,6 +2,7 @@
 
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
+import { motion } from 'framer-motion';
 
 interface ChatBubbleProps {
   message: string;
@@ -92,18 +93,21 @@ export default function ChatBubble({ message, isUser, timestamp, attachment, sou
   // If attachment exists, render File Card instead of text
   if (attachment) {
     return (
-      <div
-        className={`flex w-full mb-6 animate-fade-slide-up ${
+      <motion.div
+        className={`flex w-full mb-6 ${
           isUser ? 'justify-end' : 'justify-start'
         }`}
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ type: "spring", stiffness: 200, damping: 20 }}
       >
         <div
           className={`
             max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3
             transition-colors duration-300
             ${isUser
-              ? 'bg-neutral-800 border border-neutral-700'
-              : 'bg-neutral-900 border border-neutral-700'
+              ? 'bg-gradient-to-br from-blue-600/20 to-blue-600/10 backdrop-blur-sm border border-blue-500/20'
+              : 'bg-neutral-800/40 backdrop-blur-sm border border-white/5'
             }
           `}
         >
@@ -131,24 +135,27 @@ export default function ChatBubble({ message, isUser, timestamp, attachment, sou
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   // Regular text message
   return (
-    <div
-      className={`flex w-full mb-6 animate-fade-slide-up ${
+    <motion.div
+      className={`flex w-full mb-6 ${
         isUser ? 'justify-end' : 'justify-start'
       }`}
+      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 200, damping: 20 }}
     >
       <div
-        className={`
+          className={`
           max-w-[85%] sm:max-w-[75%] rounded-3xl px-5 py-4
           transition-colors duration-300
           ${isUser
-            ? 'bg-neutral-800 border border-neutral-700 text-neutral-100'
-            : 'bg-neutral-900 border border-neutral-700 text-neutral-100 shadow-sm hover:shadow-md'
+            ? 'bg-gradient-to-br from-blue-600/20 to-blue-600/10 backdrop-blur-sm border border-blue-500/20 text-neutral-100 shadow-md'
+            : 'bg-neutral-800/40 backdrop-blur-sm border border-white/5 text-neutral-100 shadow-md hover:shadow-lg'
           }
         `}
       >
@@ -188,7 +195,7 @@ export default function ChatBubble({ message, isUser, timestamp, attachment, sou
                       const fileNames = fileName.split(',').map(f => f.trim());
                       
                       return (
-                        <span className="text-blue-400 font-medium">
+                        <span className="font-mono text-xs text-blue-300 bg-blue-500/10 px-2 py-1 rounded-md inline-flex items-center gap-1">
                           ({fileNames.map((file, index) => (
                             <React.Fragment key={index}>
                               {onViewDocument ? (
@@ -197,7 +204,7 @@ export default function ChatBubble({ message, isUser, timestamp, attachment, sou
                                     e.preventDefault();
                                     onViewDocument(file);
                                   }}
-                                  className="text-blue-400 hover:text-blue-300 hover:underline cursor-pointer transition-colors"
+                                  className="text-blue-300 hover:text-blue-200 hover:underline cursor-pointer transition-colors"
                                   title={`View ${file}`}
                                 >
                                   {file}
@@ -213,13 +220,13 @@ export default function ChatBubble({ message, isUser, timestamp, attachment, sou
                     }
                     // Regular code block
                     return (
-                      <code className="bg-neutral-800 px-1.5 py-0.5 rounded text-[13px] font-mono text-neutral-100 border border-neutral-700">
+                      <code className="bg-neutral-800/60 backdrop-blur-sm px-1.5 py-0.5 rounded text-[13px] font-mono text-neutral-100 border border-white/10">
                         {children}
                       </code>
                     );
                   },
                   pre: ({ children }) => (
-                    <pre className="bg-neutral-800 p-3 rounded-xl overflow-x-auto mb-3 text-[13px] font-mono border border-neutral-700">
+                    <pre className="bg-neutral-800/60 backdrop-blur-sm p-3 rounded-xl overflow-x-auto mb-3 text-[13px] font-mono border border-white/10">
                       {children}
                     </pre>
                   ),
@@ -255,7 +262,7 @@ export default function ChatBubble({ message, isUser, timestamp, attachment, sou
                     <button
                       key={index}
                       onClick={() => onViewDocument?.(source)}
-                      className="inline-flex items-center px-2.5 py-1 rounded-lg bg-neutral-800 border border-neutral-700 text-[12px] text-neutral-300 hover:bg-neutral-700 hover:border-neutral-600 transition-colors cursor-pointer"
+                      className="inline-flex items-center px-2.5 py-1 rounded-lg bg-neutral-800/60 backdrop-blur-sm border border-white/10 text-[12px] font-mono text-blue-300 hover:bg-neutral-700/60 hover:border-white/20 transition-colors cursor-pointer"
                       title={`View ${source}`}
                     >
                       {source}
@@ -267,6 +274,6 @@ export default function ChatBubble({ message, isUser, timestamp, attachment, sou
           </>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import Sidebar from '@/components/layout/Sidebar';
 import ChatContainer from '@/components/chat/ChatContainer';
 import ChatBubble from '@/components/chat/ChatBubble';
@@ -8,7 +9,7 @@ import ChatInput from '@/components/chat/ChatInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
 import UploadCard from '@/components/upload/UploadCard';
 import DocumentList from '@/components/upload/DocumentList';
-import PDFViewerModal from '@/components/ui/PDFViewerModal';
+import PDFViewerPanel from '@/components/ui/PDFViewerPanel';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 interface Message {
@@ -610,7 +611,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-neutral-950 to-neutral-900 flex transition-colors duration-300">
+    <div className="h-screen bg-transparent flex overflow-hidden transition-colors duration-300">
       {/* Sidebar */}
       <Sidebar 
         items={[
@@ -632,13 +633,17 @@ export default function Home() {
         onNewChat={handleNewChat}
       />
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col ml-16">
+      {/* Main Content - Split Screen Layout */}
+      <main className="flex-1 flex flex-row ml-16 overflow-hidden">
+        {/* Chat Area - Dynamic Width */}
+        <div className={`flex-1 flex flex-col transition-all duration-300 ${
+          selectedDocument ? 'lg:w-1/2' : 'w-full'
+        } ${!isUploading && messages.length > 0 ? 'overflow-hidden' : 'overflow-y-auto'}`}>
         {/* CRITICAL: Chat Interface only appears if NOT uploading AND has messages */}
         {/* This ensures UI stays on upload page during entire upload process */}
         {!isUploading && messages.length > 0 ? (
           /* Chat Interface */
-          <div className="flex-1 flex flex-col h-screen overflow-hidden bg-neutral-950 transition-colors duration-300">
+          <div className="flex-1 flex flex-col h-full overflow-hidden bg-transparent transition-colors duration-300">
             <ChatContainer>
               {messages
                 .filter((message) => {
@@ -677,8 +682,8 @@ export default function Home() {
           </div>
         ) : (
           /* Hero Section - Gemini 2025 Style */
-          <div className="flex-1 flex items-center justify-center px-4 py-12">
-            <div className="w-full max-w-[900px] mx-auto">
+          <div className="flex-1 overflow-y-auto px-4 py-12">
+            <div className="w-full max-w-[900px] mx-auto min-h-full flex flex-col items-center justify-center">
               <div className="text-center mb-12 animate-fade-slide-up">
                 <h1 className="text-5xl sm:text-6xl font-bold text-neutral-100 mb-4 leading-tight tracking-tight transition-colors duration-300">
                   Hello again 👋
@@ -755,13 +760,36 @@ export default function Home() {
             </div>
           </div>
         )}
+        </div>
 
-        {/* PDF Viewer Modal */}
-        <PDFViewerModal
-          isOpen={selectedDocument !== null}
-          onClose={() => setSelectedDocument(null)}
-          fileName={selectedDocument}
-        />
+        {/* PDF Viewer Panel - Split Screen (Desktop) / Overlay (Mobile) */}
+        <AnimatePresence mode="wait">
+          {selectedDocument && (
+            <motion.div
+              key="pdf-panel"
+              initial={{ x: '100%', opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: '100%', opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="hidden lg:flex lg:w-1/2"
+            >
+              <PDFViewerPanel
+                fileName={selectedDocument}
+                onClose={() => setSelectedDocument(null)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
+        {/* Mobile PDF Viewer (Overlay) - No animation needed, handled by PDFViewerPanel */}
+        {selectedDocument && (
+          <div className="lg:hidden">
+            <PDFViewerPanel
+              fileName={selectedDocument}
+              onClose={() => setSelectedDocument(null)}
+            />
+          </div>
+        )}
 
         {/* Delete Confirmation Dialog */}
         <ConfirmDialog
