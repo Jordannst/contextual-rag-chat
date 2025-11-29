@@ -7,8 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/unidoc/unipdf/v3/extractor"
-	"github.com/unidoc/unipdf/v3/model"
+	"github.com/ledongthuc/pdf"
 )
 
 // ExtractTextFromFile extracts text from PDF or TXT files
@@ -25,46 +24,28 @@ func ExtractTextFromFile(filePath string) (string, error) {
 	}
 }
 
-// extractTextFromPDF extracts text from PDF file
+// extractTextFromPDF extracts text from PDF file using github.com/ledongthuc/pdf
 func extractTextFromPDF(filePath string) (string, error) {
-	file, err := os.Open(filePath)
+	// Open PDF file - returns (*os.File, *Reader, error)
+	file, reader, err := pdf.Open(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open PDF file: %w", err)
 	}
 	defer file.Close()
 
-	reader, err := model.NewPdfReader(file)
+	// Get plain text reader from PDF
+	textReader, err := reader.GetPlainText()
 	if err != nil {
-		return "", fmt.Errorf("failed to create PDF reader: %w", err)
+		return "", fmt.Errorf("failed to get plain text from PDF: %w", err)
 	}
 
-	var textBuilder strings.Builder
-	numPages, err := reader.GetNumPages()
+	// Read all text from reader
+	textBytes, err := io.ReadAll(textReader)
 	if err != nil {
-		return "", fmt.Errorf("failed to get number of pages: %w", err)
+		return "", fmt.Errorf("failed to read text from PDF: %w", err)
 	}
 
-	for i := 1; i <= numPages; i++ {
-		page, err := reader.GetPage(i)
-		if err != nil {
-			continue
-		}
-
-		ex, err := extractor.New(page)
-		if err != nil {
-			continue
-		}
-
-		pageText, err := ex.ExtractText()
-		if err != nil {
-			continue
-		}
-
-		textBuilder.WriteString(pageText)
-		textBuilder.WriteString("\n")
-	}
-
-	return textBuilder.String(), nil
+	return string(textBytes), nil
 }
 
 // extractTextFromTXT extracts text from TXT file

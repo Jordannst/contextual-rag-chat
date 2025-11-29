@@ -1,22 +1,22 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"net/http"
 	"os"
 
 	"backend/db"
 	"backend/routes"
+	"backend/utils"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 )
 
 func main() {
-	// Load environment variables
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found")
-	}
+	// Load environment variables with BOM handling
+	utils.LoadEnvWithBOMHandling()
 
 	// Initialize database connection
 	if err := db.InitDB(); err != nil {
@@ -24,8 +24,27 @@ func main() {
 	}
 	defer db.CloseDB()
 
-	// Setup router
+	// Setup router with recovery middleware
 	r := gin.Default()
+	
+	// Add logging middleware
+	r.Use(func(c *gin.Context) {
+		// Log request
+		log.Printf("[Request] %s %s", c.Request.Method, c.Request.URL.Path)
+		c.Next()
+		// Log response
+		log.Printf("[Response] %s %s - Status: %d", c.Request.Method, c.Request.URL.Path, c.Writer.Status())
+	})
+	
+	// Add custom recovery middleware to log errors
+	r.Use(gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
+		log.Printf("[PANIC] Recovered: %v", recovered)
+		log.Printf("[PANIC] Request: %s %s", c.Request.Method, c.Request.URL.Path)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Internal server error",
+			"message": fmt.Sprintf("%v", recovered),
+		})
+	}))
 
 	// CORS middleware
 	config := cors.DefaultConfig()

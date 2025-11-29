@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/joho/godotenv"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -15,9 +14,8 @@ var Pool *pgxpool.Pool
 
 // InitDB initializes the database connection
 func InitDB() error {
-	if err := godotenv.Load(); err != nil {
-		// .env file is optional
-	}
+	// Note: .env loading is handled by main.go or calling code
+	// This allows for centralized BOM handling
 
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
@@ -58,9 +56,10 @@ func CloseDB() {
 
 // Document represents a document from the database
 type Document struct {
-	ID       int32
-	Content  string
-	Distance float64
+	ID         int32
+	Content    string
+	SourceFile string
+	Distance   float64
 }
 
 // InsertDocument inserts a document with its embedding vector into the database
@@ -85,6 +84,7 @@ func InsertDocument(content string, embedding []float32, sourceFile string) erro
 
 // SearchSimilarDocuments searches for similar documents using cosine distance
 // Returns top K most similar documents ordered by similarity
+// Returns empty slice if no documents found (no error)
 func SearchSimilarDocuments(queryEmbedding []float32, limit int) ([]Document, error) {
 	if Pool == nil {
 		return nil, fmt.Errorf("database pool is not initialized")
@@ -102,7 +102,7 @@ func SearchSimilarDocuments(queryEmbedding []float32, limit int) ([]Document, er
 	// Query using cosine distance (1 - cosine similarity)
 	// ORDER BY embedding <=> $1 means cosine distance (ascending = most similar)
 	query := `
-		SELECT id, content, 1 - (embedding <=> $1) as distance
+		SELECT id, content, source_file, 1 - (embedding <=> $1) as distance
 		FROM documents
 		ORDER BY embedding <=> $1
 		LIMIT $2
@@ -117,7 +117,7 @@ func SearchSimilarDocuments(queryEmbedding []float32, limit int) ([]Document, er
 	var documents []Document
 	for rows.Next() {
 		var doc Document
-		if err := rows.Scan(&doc.ID, &doc.Content, &doc.Distance); err != nil {
+		if err := rows.Scan(&doc.ID, &doc.Content, &doc.SourceFile, &doc.Distance); err != nil {
 			return nil, fmt.Errorf("failed to scan document: %w", err)
 		}
 		documents = append(documents, doc)
@@ -125,6 +125,11 @@ func SearchSimilarDocuments(queryEmbedding []float32, limit int) ([]Document, er
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating documents: %w", err)
+	}
+
+	// Return empty slice if no documents found (not an error)
+	if len(documents) == 0 {
+		return []Document{}, nil
 	}
 
 	return documents, nil

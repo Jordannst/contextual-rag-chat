@@ -28,8 +28,10 @@ func GenerateChatResponse(userQuery string, contextDocs []string, history []mode
 	}
 	defer client.Close()
 
-	// Get the generative model (using gemini-pro or gemini-1.5-flash)
-	model := client.GenerativeModel("gemini-1.5-flash")
+	// Get the generative model
+	// Using gemini-2.0-flash (confirmed available and supports generateContent)
+	// Fallback chain: gemini-2.0-flash-001 -> gemini-flash-latest -> gemini-2.5-flash
+	model := client.GenerativeModel("gemini-2.0-flash")
 
 	// Build conversation history
 	historyText := ""
@@ -66,10 +68,33 @@ func GenerateChatResponse(userQuery string, contextDocs []string, history []mode
 	prompt += fmt.Sprintf("PERTANYAAN USER SAAT INI:\n%s\n\n", userQuery)
 	prompt += "Jawablah pertanyaan user dengan mempertimbangkan riwayat percakapan di atas dan konteks dokumen."
 
-	// Generate response
-	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
-	if err != nil {
-		return "", fmt.Errorf("failed to generate response: %w", err)
+	// Generate response with fallback chain
+	var resp *genai.GenerateContentResponse
+	var genErr error
+	
+	modelsToTry := []string{"gemini-2.0-flash", "gemini-2.0-flash-001", "gemini-flash-latest", "gemini-2.5-flash"}
+	
+	for i, modelName := range modelsToTry {
+		if i == 0 {
+			// Use primary model (already created)
+			resp, genErr = model.GenerateContent(ctx, genai.Text(prompt))
+		} else {
+			// Try fallback models
+			fmt.Printf("[Chat] Warning: Failed with previous model, trying fallback %s: %v\n", modelName, genErr)
+			fallbackModel := client.GenerativeModel(modelName)
+			resp, genErr = fallbackModel.GenerateContent(ctx, genai.Text(prompt))
+		}
+		
+		if genErr == nil {
+			if i > 0 {
+				fmt.Printf("[Chat] Successfully used fallback model: %s\n", modelName)
+			}
+			break
+		}
+	}
+	
+	if genErr != nil {
+		return "", fmt.Errorf("failed to generate response (tried %s): %w", strings.Join(modelsToTry, ", "), genErr)
 	}
 
 	// Extract text from response
