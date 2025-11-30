@@ -3,35 +3,17 @@ package utils
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"backend/models"
 
 	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/option"
 )
 
 // GenerateChatResponse generates a chat response using Gemini with RAG context and conversation history
 func GenerateChatResponse(userQuery string, contextDocs []string, history []models.ChatMessage) (string, error) {
-	// Get API key from environment variable
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		return "", fmt.Errorf("GEMINI_API_KEY is not set in environment variables")
-	}
-
-	// Initialize Gemini client
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
-	if err != nil {
-		return "", fmt.Errorf("failed to create Gemini client: %w", err)
-	}
-	defer client.Close()
-
-	// Get the generative model
-	// Using gemini-2.0-flash (confirmed available and supports generateContent)
-	// Fallback chain: gemini-2.0-flash-001 -> gemini-flash-latest -> gemini-2.5-flash
-	model := client.GenerativeModel("gemini-2.0-flash")
+	keyManager := GetKeyManager()
 
 	// Build conversation history
 	historyText := ""
@@ -95,33 +77,22 @@ func GenerateChatResponse(userQuery string, contextDocs []string, history []mode
 	prompt += fmt.Sprintf("PERTANYAAN USER SAAT INI:\n%s\n\n", userQuery)
 	prompt += "Jawablah pertanyaan user dengan natural dan profesional. JANGAN menuliskan kategori, klasifikasi, atau proses internal apapun. Langsung berikan jawaban intinya."
 
-	// Generate response with fallback chain
-	var resp *genai.GenerateContentResponse
-	var genErr error
-	
+	// Generate response with fallback chain and key rotation
 	modelsToTry := []string{"gemini-2.0-flash", "gemini-2.0-flash-001", "gemini-flash-latest", "gemini-2.5-flash"}
 	
-	for i, modelName := range modelsToTry {
-		if i == 0 {
-			// Use primary model (already created)
-			resp, genErr = model.GenerateContent(ctx, genai.Text(prompt))
-		} else {
-			// Try fallback models
-			fmt.Printf("[Chat] Warning: Failed with previous model, trying fallback %s: %v\n", modelName, genErr)
-			fallbackModel := client.GenerativeModel(modelName)
-			resp, genErr = fallbackModel.GenerateContent(ctx, genai.Text(prompt))
+	var resp *genai.GenerateContentResponse
+	err := keyManager.ExecuteWithRetryAndModel(ctx, modelsToTry, func(client *genai.Client, modelName string) error {
+		model := client.GenerativeModel(modelName)
+		var genErr error
+		resp, genErr = model.GenerateContent(ctx, genai.Text(prompt))
+		if genErr != nil {
+			return genErr
 		}
-		
-		if genErr == nil {
-			if i > 0 {
-				fmt.Printf("[Chat] Successfully used fallback model: %s\n", modelName)
-			}
-			break
-		}
-	}
+		return nil
+	})
 	
-	if genErr != nil {
-		return "", fmt.Errorf("failed to generate response (tried %s): %w", strings.Join(modelsToTry, ", "), genErr)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate response (tried models: %s): %w", strings.Join(modelsToTry, ", "), err)
 	}
 
 	// Extract text from response
@@ -150,21 +121,11 @@ func GenerateChatResponse(userQuery string, contextDocs []string, history []mode
 
 // StreamChatResponse generates a streaming chat response using Gemini with RAG context and conversation history
 // Returns an iterator for streaming responses
+// Note: For streaming, we can't use ExecuteWithRetry directly because the iterator needs the client to stay alive
+// We'll try to get a working key first, then create the iterator
 func StreamChatResponse(userQuery string, contextDocs []string, history []models.ChatMessage) (*genai.GenerateContentResponseIterator, error) {
-	// Get API key from environment variable
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		return nil, fmt.Errorf("GEMINI_API_KEY is not set in environment variables")
-	}
-
-	// Initialize Gemini client
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
-	}
-	// Note: Don't defer Close() here as the iterator needs the client to stay alive
-	// The caller should handle cleanup
+	keyManager := GetKeyManager()
 
 	// Build conversation history
 	historyText := ""
@@ -228,15 +189,24 @@ func StreamChatResponse(userQuery string, contextDocs []string, history []models
 	prompt += fmt.Sprintf("PERTANYAAN USER SAAT INI:\n%s\n\n", userQuery)
 	prompt += "Jawablah pertanyaan user dengan natural dan profesional. JANGAN menuliskan kategori, klasifikasi, atau proses internal apapun. Langsung berikan jawaban intinya."
 
+	// For streaming, we use GetClientForStreaming which returns a client that stays alive
+	// The caller is responsible for closing the client
+	client, err := keyManager.GetClientForStreaming(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client for streaming: %w", err)
+	}
+	// Note: Don't defer Close() here as the iterator needs the client to stay alive
+	// The caller should handle cleanup
+	
 	// Get the generative model
 	// Using gemini-2.0-flash (confirmed available and supports generateContent)
-	// Fallback chain: gemini-2.0-flash-001 -> gemini-flash-latest -> gemini-2.5-flash
 	model := client.GenerativeModel("gemini-2.0-flash")
 
 	// Generate streaming response
 	iter := model.GenerateContentStream(ctx, genai.Text(prompt))
 	
-	// Note: If streaming fails, we might need to handle fallback
+	// Note: If streaming fails with rate limit during iteration, the handler should
+	// call RotateKeyOnError and retry StreamChatResponse
 	// For now, we'll return the iterator and let the handler deal with errors
 	
 	return iter, nil

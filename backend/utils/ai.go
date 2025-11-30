@@ -4,74 +4,67 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"backend/models"
 
 	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/option"
 )
 
 // GenerateEmbedding generates embedding vector from text using Google Gemini
 // Returns embedding vector as []float32 and error if any
 func GenerateEmbedding(text string) ([]float32, error) {
-	// Get API key from environment variable
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		return nil, fmt.Errorf("GEMINI_API_KEY is not set in environment variables")
-	}
-
-	// Initialize Gemini client with background context
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
-	}
-	defer client.Close()
+	keyManager := GetKeyManager()
 
-	// Get the embedding model
-	model := client.EmbeddingModel("text-embedding-004")
+	var result []float32
+	var lastErr error
 
-	// Generate embedding from text
-	embedding, err := model.EmbedContent(ctx, genai.Text(text))
+	err := keyManager.ExecuteWithRetry(ctx, func(client *genai.Client) error {
+		// Get the embedding model
+		model := client.EmbeddingModel("text-embedding-004")
+
+		// Generate embedding from text
+		embedding, err := model.EmbedContent(ctx, genai.Text(text))
+		if err != nil {
+			lastErr = err
+			return err
+		}
+
+		// Check if embedding response is empty
+		if embedding == nil || embedding.Embedding == nil {
+			lastErr = fmt.Errorf("embedding response is empty")
+			return lastErr
+		}
+
+		// Check if embedding values are empty
+		if len(embedding.Embedding.Values) == 0 {
+			lastErr = fmt.Errorf("embedding values are empty")
+			return lastErr
+		}
+
+		// Store result
+		result = embedding.Embedding.Values
+		return nil
+	})
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate embedding: %w", err)
 	}
 
-	// Check if embedding response is empty
-	if embedding == nil || embedding.Embedding == nil {
-		return nil, fmt.Errorf("embedding response is empty")
-	}
-
-	// Check if embedding values are empty
-	if len(embedding.Embedding.Values) == 0 {
-		return nil, fmt.Errorf("embedding values are empty")
+	if result == nil {
+		return nil, fmt.Errorf("embedding generation failed: %w", lastErr)
 	}
 
 	// Return embedding values as []float32
-	return embedding.Embedding.Values, nil
+	return result, nil
 }
 
 // GenerateQuestionSuggestions generates question suggestions based on document context
 // Returns a slice of suggested questions as strings
 func GenerateQuestionSuggestions(contextText string) ([]string, error) {
-	// Get API key from environment variable
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		return nil, fmt.Errorf("GEMINI_API_KEY is not set in environment variables")
-	}
-
-	// Initialize Gemini client
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
-	}
-	defer client.Close()
-
-	// Get the generative model
-	model := client.GenerativeModel("gemini-2.0-flash")
+	keyManager := GetKeyManager()
 
 	// Build prompt for question suggestions
 	prompt := fmt.Sprintf(`Berdasarkan teks berikut, buatkan 3-4 pertanyaan pendek dan menarik yang mungkin ditanyakan user tentang dokumen ini.
@@ -89,8 +82,20 @@ Instruksi:
 Contoh format output:
 ["Apa tujuan utama dari dokumen ini?", "Bagaimana cara menggunakan fitur X?", "Apa saja persyaratan yang diperlukan?"]`, contextText)
 
-	// Generate response
-	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	var resp *genai.GenerateContentResponse
+	err := keyManager.ExecuteWithRetry(ctx, func(client *genai.Client) error {
+		// Get the generative model
+		model := client.GenerativeModel("gemini-2.0-flash")
+		
+		// Generate response
+		var genErr error
+		resp, genErr = model.GenerateContent(ctx, genai.Text(prompt))
+		if genErr != nil {
+			return genErr
+		}
+		return nil
+	})
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate question suggestions: %w", err)
 	}
@@ -169,22 +174,8 @@ func RewriteQuery(history []models.ChatMessage, currentQuery string) (string, er
 		return currentQuery, nil
 	}
 
-	// Get API key from environment variable
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		return currentQuery, fmt.Errorf("GEMINI_API_KEY is not set in environment variables")
-	}
-
-	// Initialize Gemini client
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
-	if err != nil {
-		return currentQuery, fmt.Errorf("failed to create Gemini client: %w", err)
-	}
-	defer client.Close()
-
-	// Get the generative model (using Flash for speed)
-	model := client.GenerativeModel("gemini-2.0-flash")
+	keyManager := GetKeyManager()
 
 	// Build conversation history text
 	historyText := ""
@@ -208,8 +199,20 @@ Pertanyaan User Terbaru: %s
 
 Standalone Query (tulis ulang pertanyaan menjadi lengkap dan jelas):`, historyText, currentQuery)
 
-	// Generate response
-	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	var resp *genai.GenerateContentResponse
+	err := keyManager.ExecuteWithRetry(ctx, func(client *genai.Client) error {
+		// Get the generative model (using Flash for speed)
+		model := client.GenerativeModel("gemini-2.0-flash")
+		
+		// Generate response
+		var genErr error
+		resp, genErr = model.GenerateContent(ctx, genai.Text(prompt))
+		if genErr != nil {
+			return genErr
+		}
+		return nil
+	})
+
 	if err != nil {
 		// If rewriting fails, return original query as fallback
 		return currentQuery, fmt.Errorf("failed to rewrite query: %w", err)
