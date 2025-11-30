@@ -18,6 +18,13 @@ func main() {
 	// Load environment variables with BOM handling
 	utils.LoadEnvWithBOMHandling()
 
+	// Initialize KeyManager early to validate API keys
+	keyManager := utils.GetKeyManager()
+	if !keyManager.IsInitialized() {
+		log.Fatal("ERROR: No valid API keys found. Please set GEMINI_API_KEY or GEMINI_API_KEYS in your .env file")
+	}
+	log.Println("✓ KeyManager initialized successfully")
+
 	// Initialize database connection
 	if err := db.InitDB(); err != nil {
 		log.Fatal("Failed to initialize database:", err)

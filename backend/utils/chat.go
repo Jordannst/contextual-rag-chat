@@ -195,6 +195,15 @@ func StreamChatResponse(userQuery string, contextDocs []string, history []models
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client for streaming: %w", err)
 	}
+	
+	// Validate that KeyManager is initialized
+	if !keyManager.IsInitialized() {
+		if client != nil {
+			client.Close()
+		}
+		return nil, fmt.Errorf("KeyManager not initialized - no valid API keys available")
+	}
+	
 	// Note: Don't defer Close() here as the iterator needs the client to stay alive
 	// The caller should handle cleanup
 	

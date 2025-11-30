@@ -231,7 +231,22 @@ func ChatHandler(c *gin.Context) {
 	iter, err := utils.StreamChatResponse(rewrittenQuery, contextDocs, req.History)
 	if err != nil {
 		log.Printf("[Chat] ERROR DI STEP 6 (Stream Chat Response): %v\n", err)
-		// Send error event
+		
+		// Check if it's an invalid API key error
+		errStr := strings.ToLower(err.Error())
+		if strings.Contains(errStr, "api key not valid") || 
+		   strings.Contains(errStr, "api_key_invalid") ||
+		   strings.Contains(errStr, "invalid api key") {
+			log.Printf("[Chat] ERROR: Invalid API key detected in streaming")
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Invalid API key",
+				"message": "Please check your GEMINI_API_KEY in .env file. The API key is not valid or has expired.",
+			})
+			return
+		}
+		
+		// For other errors, try to send error event via SSE
+		// But if headers already sent, we can't change status code
 		errorData := map[string]string{
 			"error":   "Failed to start streaming",
 			"message": err.Error(),
@@ -259,12 +274,36 @@ func ChatHandler(c *gin.Context) {
 			}
 			
 			// Check for other "done" indicators (fallback)
-			errStr := err.Error()
+			errStr := strings.ToLower(err.Error())
 			if strings.Contains(errStr, "done") || 
-			   strings.Contains(errStr, "EOF") || 
+			   strings.Contains(errStr, "eof") || 
 			   strings.Contains(errStr, "no more") {
 				log.Printf("[Chat] Streaming completed. Total chunks: %d\n", chunkCount)
 				break
+			}
+			
+			// Check if it's an invalid API key error
+			if strings.Contains(errStr, "api key not valid") || 
+			   strings.Contains(errStr, "api_key_invalid") ||
+			   strings.Contains(errStr, "invalid api key") {
+				log.Printf("[Chat] ERROR: Invalid API key detected during streaming")
+				errorData := map[string]string{
+					"error":   "Invalid API key",
+					"message": "Please check your GEMINI_API_KEY in .env file. The API key is not valid or has expired.",
+					"type":    "error",
+				}
+				errorJSON, _ := json.Marshal(errorData)
+				fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", errorJSON)
+				c.Writer.Flush()
+				return
+			}
+			
+			// Check if it's a rate limit error - try to rotate key
+			if strings.Contains(errStr, "429") || 
+			   strings.Contains(errStr, "quota exceeded") ||
+			   strings.Contains(errStr, "rate limit") {
+				log.Printf("[Chat] WARNING: Rate limit detected during streaming")
+				// Note: Can't rotate key mid-stream, but we can log it
 			}
 			
 			// Real error occurred
