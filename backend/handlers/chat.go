@@ -7,31 +7,31 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gin-gonic/gin"
-	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/iterator"
 	"backend/db"
 	"backend/models"
 	"backend/utils"
+	"github.com/gin-gonic/gin"
+	"github.com/google/generative-ai-go/genai"
+	"google.golang.org/api/iterator"
 )
 
 type ChatRequest struct {
-	Question      string             `json:"question" binding:"required"`
+	Question      string               `json:"question" binding:"required"`
 	History       []models.ChatMessage `json:"history"`
-	SelectedFiles []string            `json:"selectedFiles,omitempty"` // Optional: filter by specific files
-	SessionID     *int                `json:"sessionId,omitempty"`      // Optional: session ID for persistence
+	SelectedFiles []string             `json:"selectedFiles,omitempty"` // Optional: filter by specific files
+	SessionID     *int                 `json:"sessionId,omitempty"`     // Optional: session ID for persistence
 }
 
 type ChatResponse struct {
-	Response   string   `json:"response"`
-	Sources    []string `json:"sources,omitempty"`
-	SourceIDs  []int32  `json:"sourceIds,omitempty"`
-	SessionID  *int     `json:"sessionId,omitempty"` // Return session ID (new or existing)
+	Response  string   `json:"response"`
+	Sources   []string `json:"sources,omitempty"`
+	SourceIDs []int32  `json:"sourceIds,omitempty"`
+	SessionID *int     `json:"sessionId,omitempty"` // Return session ID (new or existing)
 }
 
 func ChatHandler(c *gin.Context) {
 	log.Printf("[Chat] ===== Starting chat request (Streaming) =====\n")
-	
+
 	// Step 1: Parse request
 	var req ChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -75,9 +75,10 @@ func ChatHandler(c *gin.Context) {
 	// Step 3: Search for similar documents using Hybrid Search
 	// Hybrid Search combines vector similarity (semantic) + full-text search (keyword)
 	log.Printf("[Chat] Step 3: Mencari dokumen di DB menggunakan Hybrid Search...\n")
-	limit := 3
+	// Broad search: ambil kandidat lebih banyak untuk direrank dengan Cohere
+	limit := 25
 	vectorWeight := 0.7 // 70% vector, 30% text
-	
+
 	// Get file filters from request (if any)
 	fileFilters := req.SelectedFiles
 	if len(fileFilters) > 0 {
@@ -85,7 +86,7 @@ func ChatHandler(c *gin.Context) {
 	} else {
 		log.Printf("[Chat] Step 3: No file filter - searching all documents\n")
 	}
-	
+
 	similarDocs, err := db.SearchDocuments(queryEmbedding, rewrittenQuery, limit, vectorWeight, fileFilters)
 	if err != nil {
 		log.Printf("[Chat] ERROR DI STEP 3 (Search Documents): %v\n", err)
@@ -95,8 +96,8 @@ func ChatHandler(c *gin.Context) {
 		})
 		return
 	}
-	log.Printf("[Chat] Step 3: Hybrid Search menemukan: %d dokumen\n", len(similarDocs))
-	
+	log.Printf("[Chat] Step 3: Hybrid Search menemukan: %d dokumen (kandidat sebelum rerank)\n", len(similarDocs))
+
 	// Fallback Strategy: Jika hybrid search tidak menemukan hasil, fallback ke vector-only
 	if len(similarDocs) == 0 && rewrittenQuery != "" {
 		log.Printf("[Chat] Step 3: WARNING - Hybrid search yielded 0 results, falling back to vector-only search.\n")
@@ -109,36 +110,88 @@ func ChatHandler(c *gin.Context) {
 			})
 			return
 		}
-		log.Printf("[Chat] Step 3: Vector-only search menemukan: %d dokumen\n", len(similarDocs))
+		log.Printf("[Chat] Step 3: Vector-only search menemukan: %d dokumen (kandidat sebelum rerank)\n", len(similarDocs))
 	}
 
-	// Step 4: Extract content from similar documents and collect unique source files
+	// Step 3.5: Reranking dengan Cohere (AI filter) untuk memilih 5 dokumen terbaik
+	const rerankTopN = 5
+	if len(similarDocs) > 0 {
+		log.Printf("[Chat] Step 3.5: Menjalankan Cohere Rerank untuk memilih %d dokumen terbaik...\n", rerankTopN)
+
+		// Siapkan konten untuk dikirim ke Cohere
+		contents := make([]string, 0, len(similarDocs))
+		for _, doc := range similarDocs {
+			contents = append(contents, doc.Content)
+		}
+
+		indices, rerankErr := utils.RerankDocuments(rewrittenQuery, contents, rerankTopN)
+		if rerankErr != nil {
+			// Fallback: pakai top 5 dokumen pertama dari hasil DB tanpa rerank
+			log.Printf("[Chat] WARNING: Cohere Rerank gagal: %v. Fallback ke top %d dokumen dari DB.\n", rerankErr, rerankTopN)
+			top := rerankTopN
+			if len(similarDocs) < top {
+				top = len(similarDocs)
+			}
+			similarDocs = similarDocs[:top]
+		} else {
+			// Susun ulang similarDocs berdasarkan indeks yang dikembalikan Cohere
+			log.Printf("[Chat] Step 3.5: Cohere Rerank mengembalikan %d indeks\n", len(indices))
+			reordered := make([]db.Document, 0, len(indices))
+			seen := make(map[int]bool)
+			for _, idx := range indices {
+				if idx >= 0 && idx < len(similarDocs) && !seen[idx] {
+					reordered = append(reordered, similarDocs[idx])
+					seen[idx] = true
+				}
+			}
+
+			// Jika karena alasan apapun tidak ada indeks valid, fallback ke top N original
+			if len(reordered) == 0 {
+				log.Printf("[Chat] WARNING: Cohere Rerank tidak menghasilkan indeks valid. Fallback ke top %d dokumen original.\n", rerankTopN)
+				top := rerankTopN
+				if len(similarDocs) < top {
+					top = len(similarDocs)
+				}
+				reordered = similarDocs[:top]
+			}
+
+			// Batasi ke rerankTopN dokumen terbaik
+			if len(reordered) > rerankTopN {
+				reordered = reordered[:rerankTopN]
+			}
+
+			log.Printf("[Chat] Step 3.5: Setelah rerank, memakai %d dokumen terbaik sebagai konteks\n", len(reordered))
+			similarDocs = reordered
+		}
+	}
+
+	// Step 4: Extract content from (reranked) similar documents and collect unique source files
 	// Apply similarity threshold to filter out irrelevant results
 	const similarityThreshold = 0.65 // Cosine distance threshold (0 = identical, 2 = opposite)
 	// Documents with distance < 0.65 are considered relevant
 	// Documents with distance >= 0.65 are too dissimilar and should be excluded
 	// Note: Increased from 0.5 to 0.65 to be less strict for short queries
-	
+
 	var contextDocs []string
 	var sourceIDs []int32
 	uniqueSourceFiles := make(map[string]bool) // Map untuk deduplikasi nama file
-	var uniqueSources []string                  // List nama file unik
-	var filteredCount int                       // Count of documents filtered out
-	
+	var uniqueSources []string                 // List nama file unik
+	var filteredCount int                      // Count of documents filtered out
+
 	for i, doc := range similarDocs {
 		// Log candidate before filtering to see actual distances
-		log.Printf("[Chat] Step 4: Candidate %d - SourceFile: %s | Distance: %.4f\n", 
+		log.Printf("[Chat] Step 4: Candidate %d - SourceFile: %s | Distance: %.4f\n",
 			i+1, doc.SourceFile, doc.Distance)
-		
+
 		// Apply similarity threshold filter
 		// Only include documents with distance below threshold (more similar)
 		if doc.Distance >= similarityThreshold {
-			log.Printf("[Chat] Step 4: Dokumen %d - ID: %d, SourceFile: %s, Distance: %.4f (FILTERED OUT - too dissimilar, threshold: %.2f)\n", 
+			log.Printf("[Chat] Step 4: Dokumen %d - ID: %d, SourceFile: %s, Distance: %.4f (FILTERED OUT - too dissimilar, threshold: %.2f)\n",
 				i+1, doc.ID, doc.SourceFile, doc.Distance, similarityThreshold)
 			filteredCount++
 			continue // Skip this document - not relevant enough
 		}
-		
+
 		// Document passed threshold - include in context and sources
 		// Format context dengan metadata nama file untuk inline citations
 		// Format: [Document: nama_file.pdf]\nIsi konten: ... potongan teks ...
@@ -151,18 +204,18 @@ func ChatHandler(c *gin.Context) {
 		}
 		contextDocs = append(contextDocs, formattedContext)
 		sourceIDs = append(sourceIDs, doc.ID)
-		
+
 		// Kumpulkan source file dengan deduplikasi
 		// Hanya masukkan jika: (1) tidak kosong/null, (2) belum ada di map
 		if doc.SourceFile != "" && !uniqueSourceFiles[doc.SourceFile] {
 			uniqueSourceFiles[doc.SourceFile] = true
 			uniqueSources = append(uniqueSources, doc.SourceFile)
 		}
-		
-		log.Printf("[Chat] Step 4: Dokumen %d - ID: %d, Content length: %d, SourceFile: %s, Distance: %.4f (INCLUDED)\n", 
+
+		log.Printf("[Chat] Step 4: Dokumen %d - ID: %d, Content length: %d, SourceFile: %s, Distance: %.4f (INCLUDED)\n",
 			i+1, doc.ID, len(doc.Content), doc.SourceFile, doc.Distance)
 	}
-	log.Printf("[Chat] Step 4: Total context docs: %d, Unique source files: %d, Filtered out: %d\n", 
+	log.Printf("[Chat] Step 4: Total context docs: %d, Unique source files: %d, Filtered out: %d\n",
 		len(contextDocs), len(uniqueSources), filteredCount)
 
 	// Step 5: Set SSE headers for streaming
@@ -179,7 +232,7 @@ func ChatHandler(c *gin.Context) {
 		// Use existing session
 		currentSessionID = *req.SessionID
 		log.Printf("[Chat] Step 5.5: Using existing session ID: %d\n", currentSessionID)
-		
+
 		// Save user message to database
 		if err := db.SaveMessage(currentSessionID, "user", req.Question); err != nil {
 			log.Printf("[Chat] WARNING: Failed to save user message: %v\n", err)
@@ -194,7 +247,7 @@ func ChatHandler(c *gin.Context) {
 		if title == "" {
 			title = "New Chat"
 		}
-		
+
 		newSessionID, err := db.CreateSession(title)
 		if err != nil {
 			log.Printf("[Chat] WARNING: Failed to create session: %v\n", err)
@@ -203,7 +256,7 @@ func ChatHandler(c *gin.Context) {
 		} else {
 			currentSessionID = newSessionID
 			log.Printf("[Chat] Step 5.5: Created new session ID: %d (title: %s)\n", currentSessionID, title)
-			
+
 			// Save user message to database
 			if err := db.SaveMessage(currentSessionID, "user", req.Question); err != nil {
 				log.Printf("[Chat] WARNING: Failed to save user message: %v\n", err)
@@ -214,9 +267,9 @@ func ChatHandler(c *gin.Context) {
 	// Send initial metadata event (sources information + session ID)
 	// Kirim unique source file names, bukan content
 	sourcesData := map[string]interface{}{
-		"sources":    uniqueSources, // Nama file unik, bukan content
-		"sourceIds":  sourceIDs,
-		"type":       "metadata",
+		"sources":   uniqueSources, // Nama file unik, bukan content
+		"sourceIds": sourceIDs,
+		"type":      "metadata",
 	}
 	if currentSessionID > 0 {
 		sourcesData["sessionId"] = currentSessionID
@@ -231,12 +284,12 @@ func ChatHandler(c *gin.Context) {
 	iter, err := utils.StreamChatResponse(rewrittenQuery, contextDocs, req.History)
 	if err != nil {
 		log.Printf("[Chat] ERROR DI STEP 6 (Stream Chat Response): %v\n", err)
-		
+
 		// Check if it's an invalid API key error
 		errStr := strings.ToLower(err.Error())
-		if strings.Contains(errStr, "api key not valid") || 
-		   strings.Contains(errStr, "api_key_invalid") ||
-		   strings.Contains(errStr, "invalid api key") {
+		if strings.Contains(errStr, "api key not valid") ||
+			strings.Contains(errStr, "api_key_invalid") ||
+			strings.Contains(errStr, "invalid api key") {
 			log.Printf("[Chat] ERROR: Invalid API key detected in streaming")
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "Invalid API key",
@@ -244,7 +297,7 @@ func ChatHandler(c *gin.Context) {
 			})
 			return
 		}
-		
+
 		// For other errors, try to send error event via SSE
 		// But if headers already sent, we can't change status code
 		errorData := map[string]string{
@@ -272,20 +325,20 @@ func ChatHandler(c *gin.Context) {
 				log.Printf("[Chat] Streaming completed. Total chunks: %d\n", chunkCount)
 				break
 			}
-			
+
 			// Check for other "done" indicators (fallback)
 			errStr := strings.ToLower(err.Error())
-			if strings.Contains(errStr, "done") || 
-			   strings.Contains(errStr, "eof") || 
-			   strings.Contains(errStr, "no more") {
+			if strings.Contains(errStr, "done") ||
+				strings.Contains(errStr, "eof") ||
+				strings.Contains(errStr, "no more") {
 				log.Printf("[Chat] Streaming completed. Total chunks: %d\n", chunkCount)
 				break
 			}
-			
+
 			// Check if it's an invalid API key error
-			if strings.Contains(errStr, "api key not valid") || 
-			   strings.Contains(errStr, "api_key_invalid") ||
-			   strings.Contains(errStr, "invalid api key") {
+			if strings.Contains(errStr, "api key not valid") ||
+				strings.Contains(errStr, "api_key_invalid") ||
+				strings.Contains(errStr, "invalid api key") {
 				log.Printf("[Chat] ERROR: Invalid API key detected during streaming")
 				errorData := map[string]string{
 					"error":   "Invalid API key",
@@ -297,15 +350,15 @@ func ChatHandler(c *gin.Context) {
 				c.Writer.Flush()
 				return
 			}
-			
+
 			// Check if it's a rate limit error - try to rotate key
-			if strings.Contains(errStr, "429") || 
-			   strings.Contains(errStr, "quota exceeded") ||
-			   strings.Contains(errStr, "rate limit") {
+			if strings.Contains(errStr, "429") ||
+				strings.Contains(errStr, "quota exceeded") ||
+				strings.Contains(errStr, "rate limit") {
 				log.Printf("[Chat] WARNING: Rate limit detected during streaming")
 				// Note: Can't rotate key mid-stream, but we can log it
 			}
-			
+
 			// Real error occurred
 			log.Printf("[Chat] ERROR during streaming: %v\n", err)
 			errorData := map[string]string{
@@ -341,16 +394,16 @@ func ChatHandler(c *gin.Context) {
 								log.Printf("[Chat] ERROR marshaling chunk: %v\n", err)
 								continue
 							}
-							
+
 							// Send with SSE format: data: <json>\n\n
 							// JSON marshal already handles escaping properly
 							fmt.Fprintf(c.Writer, "data: %s\n\n", chunkJSON)
 							c.Writer.Flush()
-							
+
 							// Accumulate for logging
 							fullResponse.WriteString(text)
 							chunkCount++
-							
+
 							log.Printf("[Chat] Chunk %d sent (length: %d)\n", chunkCount, len(text))
 						}
 					}
@@ -387,9 +440,8 @@ func ChatHandler(c *gin.Context) {
 	c.Writer.Flush()
 
 	log.Printf("[Chat] ===== Chat streaming completed successfully (total: %d chars, %d chunks, session: %d) =====\n", fullResponse.Len(), chunkCount, currentSessionID)
-	
+
 	// Return false to prevent Gin from writing additional JSON body
 	// Note: In Gin, we don't explicitly return false, we just don't call c.JSON
 	// The streaming response is already sent
 }
-
