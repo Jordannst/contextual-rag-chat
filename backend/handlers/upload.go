@@ -25,8 +25,10 @@ func UploadFile(c *gin.Context) {
 
 	// Validate file extension
 	ext := filepath.Ext(file.Filename)
-	if ext != ".pdf" && ext != ".txt" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Only PDF and TXT files are allowed"})
+	if ext != ".pdf" && ext != ".txt" && ext != ".docx" && ext != ".csv" && ext != ".xlsx" && ext != ".xls" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Only PDF, TXT, DOCX, CSV, and Excel (.xlsx, .xls) files are allowed",
+		})
 		return
 	}
 

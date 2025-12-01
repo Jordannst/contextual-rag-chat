@@ -27,7 +27,7 @@ export default function UploadCard({
 }: UploadCardProps) {
   const [isDragging, setIsDragging] = useState(false);
 
-  const allowedExtensions = ['.pdf', '.txt', '.docx'];
+  const allowedExtensions = ['.pdf', '.txt', '.docx', '.csv', '.xlsx', '.xls'];
 
   const filterAllowedFiles = (files: File[]) => {
     const allowed: File[] = [];
@@ -76,7 +76,7 @@ export default function UploadCard({
       const allowedFiles = filterAllowedFiles(fileArray);
 
       if (allowedFiles.length === 0) {
-        alert('Hanya file PDF, DOCX, dan TXT yang didukung.');
+        alert('Hanya file PDF, DOCX, TXT, CSV, dan Excel (.xlsx, .xls) yang didukung.');
       } else {
         onFileSelect(allowedFiles);
       }
@@ -125,7 +125,7 @@ export default function UploadCard({
             Seret dan lepas file di sini, atau klik untuk memilih
           </p>
           <p className="text-xs text-neutral-500 transition-colors duration-300">
-            Format yang didukung: PDF, DOCX, TXT (bisa pilih beberapa file sekaligus)
+            Format yang didukung: PDF, DOCX, TXT, CSV, Excel (.xlsx, .xls) (bisa pilih beberapa file sekaligus)
           </p>
         </div>
 
@@ -216,7 +216,7 @@ export default function UploadCard({
           type="file"
           id="file-upload"
           className="hidden"
-          accept=".pdf,.docx,.txt"
+          accept=".pdf,.docx,.txt,.csv,.xlsx,.xls"
           multiple
           onChange={handleFileInputChange}
           disabled={isUploading}

@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-// ExtractTextFromFile extracts text from PDF, TXT, or DOCX files
+// ExtractTextFromFile extracts text from PDF, TXT, DOCX, CSV, and Excel files
 func ExtractTextFromFile(filePath string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 
@@ -25,6 +25,9 @@ func ExtractTextFromFile(filePath string) (string, error) {
 		return extractTextFromTXT(filePath)
 	case ".docx":
 		return extractTextFromDocx(filePath)
+	case ".csv", ".xlsx", ".xls":
+		// Untuk data tabular (CSV/Excel), gunakan processor Python
+		return extractTextFromTabularWithPython(filePath)
 	default:
 		return "", fmt.Errorf("unsupported file type: %s", ext)
 	}
@@ -49,6 +52,29 @@ func extractTextFromPDFWithPython(filePath string) (string, error) {
 
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("failed to run pdf_processor.py: %w (stderr: %s)", err, stderrBuf.String())
+	}
+
+	return stdoutBuf.String(), nil
+}
+
+// extractTextFromTabularWithPython mengekstrak teks naratif dari file CSV/XLS/XLSX
+// dengan memanggil skrip Python backend/scripts/data_processor.py.
+func extractTextFromTabularWithPython(filePath string) (string, error) {
+	scriptPath := filepath.Join("scripts", "data_processor.py")
+
+	cmd := exec.Command("python", scriptPath, filePath)
+	// Teruskan environment dan paksa output Python ke UTF-8
+	env := os.Environ()
+	env = append(env, "PYTHONIOENCODING=utf-8")
+	cmd.Env = env
+
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to run data_processor.py: %w (stderr: %s)", err, stderrBuf.String())
 	}
 
 	return stdoutBuf.String(), nil
