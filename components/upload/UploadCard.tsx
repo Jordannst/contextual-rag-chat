@@ -27,6 +27,20 @@ export default function UploadCard({
 }: UploadCardProps) {
   const [isDragging, setIsDragging] = useState(false);
 
+  const allowedExtensions = ['.pdf', '.txt', '.docx'];
+
+  const filterAllowedFiles = (files: File[]) => {
+    const allowed: File[] = [];
+    for (const file of files) {
+      const lowerName = file.name.toLowerCase();
+      const hasAllowedExt = allowedExtensions.some(ext => lowerName.endsWith(ext));
+      if (hasAllowedExt) {
+        allowed.push(file);
+      }
+    }
+    return allowed;
+  };
+
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -42,15 +56,30 @@ export default function UploadCard({
     setIsDragging(false);
     
     const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      onFileSelect(files);
+    const allowedFiles = filterAllowedFiles(files);
+
+    if (allowedFiles.length === 0) {
+      // Optional: beri feedback sederhana via alert (bisa diganti toast kalau mau)
+      alert('Hanya file PDF, DOCX, dan TXT yang didukung.');
+      return;
+    }
+
+    if (allowedFiles.length > 0) {
+      onFileSelect(allowedFiles);
     }
   }, [onFileSelect]);
 
   const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      onFileSelect(Array.from(files));
+      const fileArray = Array.from(files);
+      const allowedFiles = filterAllowedFiles(fileArray);
+
+      if (allowedFiles.length === 0) {
+        alert('Hanya file PDF, DOCX, dan TXT yang didukung.');
+      } else {
+        onFileSelect(allowedFiles);
+      }
     }
     // Reset input so same file can be selected again
     e.target.value = '';

@@ -1,16 +1,20 @@
 package utils
 
 import (
+	"archive/zip"
+	"bytes"
 	"fmt"
+	"html"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/ledongthuc/pdf"
 )
 
-// ExtractTextFromFile extracts text from PDF or TXT files
+// ExtractTextFromFile extracts text from PDF, TXT, or DOCX files
 func ExtractTextFromFile(filePath string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 
@@ -19,6 +23,8 @@ func ExtractTextFromFile(filePath string) (string, error) {
 		return extractTextFromPDF(filePath)
 	case ".txt":
 		return extractTextFromTXT(filePath)
+	case ".docx":
+		return extractTextFromDocx(filePath)
 	default:
 		return "", fmt.Errorf("unsupported file type: %s", ext)
 	}
@@ -62,6 +68,51 @@ func extractTextFromTXT(filePath string) (string, error) {
 	}
 
 	return string(content), nil
+}
+
+// extractTextFromDocx extracts text from DOCX file by reading main document.xml
+// This treats the DOCX as a ZIP archive and strips XML tags from word/document.xml.
+func extractTextFromDocx(filePath string) (string, error) {
+	r, err := zip.OpenReader(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open DOCX file: %w", err)
+	}
+	defer r.Close()
+
+	var docXML []byte
+	for _, f := range r.File {
+		// Main document content
+		if f.Name == "word/document.xml" {
+			rc, err := f.Open()
+			if err != nil {
+				return "", fmt.Errorf("failed to open DOCX document.xml: %w", err)
+			}
+			defer rc.Close()
+
+			docXML, err = io.ReadAll(rc)
+			if err != nil {
+				return "", fmt.Errorf("failed to read DOCX document.xml: %w", err)
+			}
+			break
+		}
+	}
+
+	if len(docXML) == 0 {
+		return "", fmt.Errorf("document.xml not found in DOCX file")
+	}
+
+	// Remove XML tags with a simple regex and unescape entities.
+	// This is lightweight and good enough for plain text extraction.
+	// Note: This is not a full XML parser, but works well for most docx bodies.
+	re := regexp.MustCompile(`<[^>]+>`)
+	text := re.ReplaceAll(docXML, []byte(" "))
+	text = bytes.ReplaceAll(text, []byte("\r"), []byte("\n"))
+
+	// Collapse multiple spaces/newlines
+	clean := strings.TrimSpace(html.UnescapeString(string(text)))
+	clean = regexp.MustCompile(`\s+`).ReplaceAllString(clean, " ")
+
+	return clean, nil
 }
 
 // SplitText splits a long text into chunks with overlap
