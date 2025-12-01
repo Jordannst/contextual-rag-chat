@@ -7,11 +7,10 @@ import (
 	"html"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"github.com/ledongthuc/pdf"
 )
 
 // ExtractTextFromFile extracts text from PDF, TXT, or DOCX files
@@ -20,7 +19,8 @@ func ExtractTextFromFile(filePath string) (string, error) {
 
 	switch ext {
 	case ".pdf":
-		return extractTextFromPDF(filePath)
+		// Untuk PDF, gunakan processor Python (hybrid approach)
+		return extractTextFromPDFWithPython(filePath)
 	case ".txt":
 		return extractTextFromTXT(filePath)
 	case ".docx":
@@ -30,28 +30,28 @@ func ExtractTextFromFile(filePath string) (string, error) {
 	}
 }
 
-// extractTextFromPDF extracts text from PDF file using github.com/ledongthuc/pdf
-func extractTextFromPDF(filePath string) (string, error) {
-	// Open PDF file - returns (*os.File, *Reader, error)
-	file, reader, err := pdf.Open(filePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to open PDF file: %w", err)
-	}
-	defer file.Close()
+// extractTextFromPDFWithPython mengekstrak teks (dan deskripsi gambar) dari PDF
+// dengan memanggil skrip Python backend/scripts/pdf_processor.py.
+func extractTextFromPDFWithPython(filePath string) (string, error) {
+	scriptPath := filepath.Join("scripts", "pdf_processor.py")
 
-	// Get plain text reader from PDF
-	textReader, err := reader.GetPlainText()
-	if err != nil {
-		return "", fmt.Errorf("failed to get plain text from PDF: %w", err)
+	cmd := exec.Command("python", scriptPath, filePath)
+	// Pastikan environment (termasuk GEMINI_API_KEY) diteruskan,
+	// dan paksa output Python ke UTF-8 supaya aman di Windows.
+	env := os.Environ()
+	env = append(env, "PYTHONIOENCODING=utf-8")
+	cmd.Env = env
+
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to run pdf_processor.py: %w (stderr: %s)", err, stderrBuf.String())
 	}
 
-	// Read all text from reader
-	textBytes, err := io.ReadAll(textReader)
-	if err != nil {
-		return "", fmt.Errorf("failed to read text from PDF: %w", err)
-	}
-
-	return string(textBytes), nil
+	return stdoutBuf.String(), nil
 }
 
 // extractTextFromTXT extracts text from TXT file
