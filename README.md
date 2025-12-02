@@ -12,6 +12,8 @@ A production-grade Retrieval-Augmented Generation (RAG) system with multimodal d
 - [Technology Stack](#technology-stack)
 - [Prerequisites](#prerequisites)
 - [Installation & Setup](#installation--setup)
+  - [Option 1: Docker Compose (Recommended)](#option-1-docker-compose-recommended---easiest)
+  - [Option 2: Manual Installation](#option-2-manual-installation)
 - [Configuration](#configuration)
 - [API Documentation](#api-documentation)
 - [Project Structure](#project-structure)
@@ -305,13 +307,21 @@ Stream Interpreted Response (SSE)
 | Tool | Purpose |
 |------|---------|
 | Tesseract OCR | OCR engine for scanned documents |
-| Docker | PostgreSQL containerization (optional) |
+| Docker | Full-stack containerization (backend, frontend, database) |
+| Docker Compose | Multi-container orchestration |
 
 ---
 
 ## Prerequisites
 
-### Required Software
+### Option 1: Docker Setup (Recommended)
+
+- **Docker Desktop** (Windows/Mac) or **Docker Engine** (Linux)
+- **Docker Compose** v3.8 or newer
+
+All other dependencies (Node.js, Go, Python, PostgreSQL, Tesseract OCR) are included in Docker images.
+
+### Option 2: Manual Setup
 
 - **Node.js** 18+ and npm
 - **Go** 1.24+ ([Download](https://go.dev/dl/))
@@ -326,7 +336,9 @@ Stream Interpreted Response (SSE)
 
 ### PostgreSQL Setup
 
-#### Option 1: Docker (Recommended)
+**Note**: If using Docker Compose, PostgreSQL with pgvector is automatically configured. Skip this section.
+
+#### Option 1: Docker (Standalone - for Manual Installation)
 
 ```bash
 docker run -d \
@@ -346,7 +358,11 @@ docker run -d \
    CREATE EXTENSION vector;
    ```
 
-### Tesseract OCR Setup (Windows)
+### Tesseract OCR Setup
+
+**Note**: If using Docker Compose, Tesseract OCR is pre-installed in the backend image. Skip this section.
+
+**Manual Setup (Windows)**:
 
 1. Download Tesseract installer from [GitHub](https://github.com/UB-Mannheim/tesseract/wiki)
 2. Install to default location: `C:\Program Files\Tesseract-OCR\`
@@ -359,14 +375,101 @@ docker run -d \
 
 ## Installation & Setup
 
-### 1. Clone Repository
+### Option 1: Docker Compose (Recommended - Easiest)
+
+The fastest way to get the entire system running without manual setup:
+
+#### Prerequisites
+
+- **Docker Desktop** (Windows/Mac) or **Docker Engine** (Linux)
+- **Docker Compose** v3.8 or newer
+
+#### Quick Start
+
+1. **Clone Repository**
 
 ```bash
 git clone <https://github.com/Jordannst/contextual-rag-chat.git>
 cd ai-rag-chatbot/my-app
 ```
 
-### 2. Backend Setup
+2. **Create `.env` file** in project root:
+
+```env
+# Database
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=rag_chatbot
+
+# Backend
+BACKEND_PORT=5000
+GIN_MODE=release
+
+# Frontend
+FRONTEND_PORT=3000
+
+# API Keys
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_API_KEYS=key1,key2,key3  # Optional: multiple keys for rotation
+COHERE_API_KEY=your_cohere_api_key_here
+```
+
+3. **Build and Start All Services**
+
+```bash
+docker-compose up --build
+```
+
+This will automatically:
+- Build backend image (Go + Python + Tesseract OCR)
+- Build frontend image (Next.js)
+- Start PostgreSQL with pgvector extension
+- Configure all dependencies and connections
+
+4. **Access Application**
+
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:5000
+- **PostgreSQL**: localhost:5432
+
+#### Docker Commands
+
+```bash
+# Start in background
+docker-compose up -d --build
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+
+# Stop and remove volumes (delete database)
+docker-compose down -v
+
+# Rebuild specific service
+docker-compose build backend
+docker-compose up -d backend
+```
+
+**Note**: All Python dependencies (pandas, matplotlib, seaborn, pytesseract) and Tesseract OCR are pre-installed in the Docker image. No manual installation required.
+
+For detailed Docker documentation, see [README_DOCKER.md](./README_DOCKER.md).
+
+---
+
+### Option 2: Manual Installation
+
+For development or custom configuration:
+
+#### 1. Clone Repository
+
+```bash
+git clone <https://github.com/Jordannst/contextual-rag-chat.git>
+cd ai-rag-chatbot/my-app
+```
+
+#### 2. Backend Setup
 
 ```bash
 cd backend
@@ -387,9 +490,11 @@ npm install
 
 ### 4. Python Dependencies
 
+**Note**: If using Docker Compose, all Python dependencies are pre-installed. Skip this step.
+
 ```bash
 # Install required Python packages
-pip install pandas openpyxl pymupdf pytesseract pillow google-generativeai
+pip install pandas openpyxl pymupdf pytesseract pillow google-generativeai matplotlib seaborn numpy
 ```
 
 ### 5. Environment Configuration
@@ -810,6 +915,7 @@ ai-rag-chatbot/
 │   │   ├── key_manager.go       # API key rotation
 │   │   └── reranker.go          # Cohere reranking
 │   │
+│   ├── Dockerfile               # Docker image for Go + Python + Tesseract
 │   └── main.go                  # Application entry point
 │
 ├── components/                   # React components
@@ -830,10 +936,16 @@ ai-rag-chatbot/
 │       ├── PDFViewerPanel.tsx  # PDF viewer
 │       └── ConfirmDialog.tsx   # Confirmation dialog
 │
+├── my-app/                       # Frontend Next.js
+│   └── Dockerfile               # Docker image for Next.js
+│
 ├── public/                       # Static assets
 ├── package.json                  # Frontend dependencies
 ├── tailwind.config.js           # Tailwind configuration
-└── README.md                     # This file
+├── docker-compose.yml            # Docker Compose orchestration
+├── .dockerignore                 # Docker ignore patterns
+├── README.md                     # This file
+└── README_DOCKER.md              # Docker setup documentation
 ```
 
 ---
@@ -842,14 +954,30 @@ ai-rag-chatbot/
 
 ### Running in Development
 
-#### Backend
+#### Option 1: Docker Compose (Recommended)
+
+```bash
+# Start all services
+docker-compose up --build
+
+# Start in background
+docker-compose up -d --build
+
+# View logs
+docker-compose logs -f backend
+docker-compose logs -f frontend
+```
+
+#### Option 2: Manual Development
+
+**Backend**
 
 ```bash
 cd backend
 go run main.go
 ```
 
-#### Frontend
+**Frontend**
 
 ```bash
 npm run dev
@@ -899,6 +1027,37 @@ go run cmd/test-analysis-code-gen/main.go
 ---
 
 ## Troubleshooting
+
+### Docker Issues
+
+**Error**: `Cannot connect to Docker daemon`
+
+**Solutions**:
+- Ensure Docker Desktop is running (Windows/Mac)
+- Verify Docker service is active: `docker ps`
+- Check Docker Compose version: `docker-compose --version`
+
+**Error**: `Service 'backend' failed to build`
+
+**Solutions**:
+- Check Dockerfile syntax
+- Verify Go version compatibility (1.24+)
+- Check Python dependencies installation in Dockerfile
+- Review build logs: `docker-compose build --no-cache backend`
+
+**Error**: `Port already in use`
+
+**Solutions**:
+- Change ports in `docker-compose.yml` or `.env`
+- Stop conflicting services: `docker-compose down`
+- Check port usage: `netstat -ano | findstr :5000` (Windows) or `lsof -i :5000` (Linux/Mac)
+
+**Error**: `Python script not found` in Docker container
+
+**Solutions**:
+- Verify scripts are copied: `docker-compose exec backend ls -la /app/scripts/`
+- Rebuild backend: `docker-compose build --no-cache backend`
+- Check Dockerfile COPY commands
 
 ### Database Connection Failed
 
