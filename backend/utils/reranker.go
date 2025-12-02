@@ -33,7 +33,7 @@ func RerankDocuments(query string, documents []string, topN int) ([]int, error) 
 
 	if rawKeys == "" {
 		return nil, fmt.Errorf("COHERE_API_KEYS or COHERE_API_KEY is not set")
-	}
+		}
 
 	parts := strings.Split(rawKeys, ",")
 	var keys []string
@@ -93,8 +93,8 @@ func RerankDocuments(query string, documents []string, topN int) ([]int, error) 
 			errStr := strings.ToLower(err.Error())
 
 			// Detect rate limit / quota errors -> try next key
-			if strings.Contains(errStr, "429") ||
-				strings.Contains(errStr, "rate limit") ||
+			if strings.Contains(errStr, "429") || 
+			   strings.Contains(errStr, "rate limit") ||
 				strings.Contains(errStr, "quota") {
 				log.Printf("[Rerank] WARNING: Cohere rate limit/quota hit for key %d, trying next key...\n", idx+1)
 				continue
@@ -165,7 +165,7 @@ func RerankDocuments(query string, documents []string, topN int) ([]int, error) 
 	if lastErr != nil {
 		log.Printf("[Rerank] ERROR: All Cohere keys failed or were rate-limited: %v\n", lastErr)
 		return nil, fmt.Errorf("all Cohere API keys failed or were rate-limited: %w", lastErr)
-	}
+}
 
 	return nil, fmt.Errorf("unexpected error in RerankDocuments: no keys attempted")
 }

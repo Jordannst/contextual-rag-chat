@@ -5,6 +5,71 @@ import json
 
 import fitz  # pymupdf
 import google.generativeai as genai
+import pytesseract
+from PIL import Image
+
+
+# Konfigurasi Path Tesseract untuk Windows
+if os.name == "nt":
+    # Coba beberapa lokasi umum instalasi Tesseract (sesuaikan jika berbeda)
+    possible_paths = [
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        r"C:\Users\{}\AppData\Local\Tesseract-OCR\tesseract.exe".format(os.getenv("USERNAME", "")),
+        r"C:\Tesseract-OCR\tesseract.exe",
+    ]
+
+    tesseract_found = False
+    for path in possible_paths:
+        if os.path.exists(path):
+            pytesseract.pytesseract.tesseract_cmd = path
+            tesseract_found = True
+            sys.stderr.write(f"[OCR] Menggunakan Tesseract di: {path}\n")
+            break
+
+    if not tesseract_found:
+        # Fallback: coba gunakan Tesseract dari PATH environment variable
+        try:
+            _ = pytesseract.get_tesseract_version()
+            tesseract_found = True
+            sys.stderr.write("[OCR] Menggunakan Tesseract dari PATH environment variable.\n")
+        except Exception as e:
+            sys.stderr.write(
+                f"[WARNING] Tesseract OCR tidak ditemukan! Pastikan sudah diinstall dan path sudah benar.\n"
+            )
+            sys.stderr.write(f"[WARNING] Error saat cek Tesseract dari PATH: {e}\n")
+            sys.stderr.write(
+                "[WARNING] OCR akan dilewati untuk halaman yang memerlukan OCR.\n"
+            )
+
+
+# Fungsi untuk mendapatkan bahasa OCR yang tersedia
+def get_available_ocr_lang():
+    """Mendeteksi bahasa yang tersedia dan return string lang yang sesuai."""
+    try:
+        available_langs = pytesseract.get_languages()
+        sys.stderr.write(f"[OCR] Bahasa tersedia: {', '.join(available_langs)}\n")
+        
+        # Cek apakah eng+ind tersedia
+        if "eng" in available_langs and "ind" in available_langs:
+            return "eng+ind"
+        elif "eng" in available_langs:
+            sys.stderr.write(
+                "[OCR] Bahasa Indonesia (ind) tidak tersedia, menggunakan Inggris (eng) saja.\n"
+            )
+            return "eng"
+        else:
+            sys.stderr.write(
+                "[WARNING] Bahasa Inggris (eng) tidak tersedia! OCR mungkin tidak berfungsi dengan baik.\n"
+            )
+            # Fallback ke bahasa pertama yang tersedia
+            if available_langs:
+                return available_langs[0]
+            return "eng"  # Default fallback
+    except Exception as e:
+        sys.stderr.write(f"[WARNING] Gagal mendapatkan daftar bahasa: {e}\n")
+        sys.stderr.write("[OCR] Menggunakan default: eng\n")
+        return "eng"  # Default fallback
 
 
 PROMPT = (
@@ -57,12 +122,83 @@ def process_pdf(path: str) -> str:
     doc = fitz.open(path)
     result_pages = []
 
-    for page_index in range(len(doc)):
-        page = doc[page_index]
+    for page_num in range(len(doc)):
+        page = doc[page_num]
 
-        # Teks halaman
+        # Teks halaman biasa
         page_text = page.get_text("text") or ""
         page_text = page_text.strip()
+
+        # Jika teks sangat sedikit, kemungkinan ini halaman hasil scan → pakai OCR
+        if len(page_text.strip()) < 50:
+            sys.stderr.write(f"[OCR] Halaman {page_num + 1} kosong/minim teks. Mencoba OCR...\n")
+            try:
+                # Cek apakah Tesseract tersedia dengan mencoba get version
+                try:
+                    pytesseract.get_tesseract_version()
+                except Exception as tesseract_check_error:
+                    sys.stderr.write(
+                        f"[OCR] Tesseract tidak tersedia atau tidak bisa diakses: {tesseract_check_error}\n"
+                    )
+                    sys.stderr.write(
+                        f"[OCR] Melewatkan OCR untuk halaman {page_num + 1}. Pastikan Tesseract sudah terinstall.\n"
+                    )
+                    # Lanjutkan tanpa OCR
+                else:
+                    # Render halaman menjadi gambar (pixmap) dengan Matrix Scaling 3x
+                    # Ini meningkatkan resolusi dari default 72 DPI menjadi ~216 DPI
+                    # untuk meningkatkan akurasi OCR pada teks kecil
+                    matrix = fitz.Matrix(3, 3)  # Zoom 3x (3x3 = 9x lebih besar)
+                    pix = page.get_pixmap(matrix=matrix)
+                    img_bytes = pix.tobytes("png")
+
+                    # Konversi ke PIL Image untuk OCR
+                    img_stream = io.BytesIO(img_bytes)
+                    pil_image = Image.open(img_stream)
+                    
+                    # Konversi ke Grayscale (mode 'L') - PENTING untuk OCR
+                    # Tesseract bekerja lebih baik pada gambar hitam-putih
+                    # karena mengurangi noise warna dan meningkatkan kontras
+                    pil_image = pil_image.convert('L')
+                    
+                    # Binarization (Thresholding): Konversi ke hitam-putih murni (Binary)
+                    # Threshold 150: pixel < 150 jadi hitam pekat (0), >= 150 jadi putih bersih (255)
+                    # Ini membuat teks lebih tajam dan meningkatkan akurasi OCR
+                    pil_image = pil_image.point(lambda x: 0 if x < 150 else 255, '1')
+                    
+                    sys.stderr.write(
+                        f"[OCR] Gambar diproses: {pil_image.width}x{pil_image.height}px, mode={pil_image.mode}\n"
+                    )
+
+                    # Dapatkan bahasa OCR yang tersedia
+                    ocr_lang = get_available_ocr_lang()
+                    
+                    # Konfigurasi Tesseract untuk dokumen tabular/struk
+                    # PSM 6: Assume a single uniform block of text
+                    # Memaksa Tesseract membaca baris demi baris dari kiri ke kanan
+                    # sehingga harga di kolom kanan tidak terlewat
+                    custom_config = r'--oem 3 --psm 6'
+                    
+                    # Jalankan OCR dengan bahasa dan konfigurasi khusus
+                    ocr_text = pytesseract.image_to_string(pil_image, lang=ocr_lang, config=custom_config).strip()
+                    sys.stderr.write(
+                        f"[OCR] Berhasil: {len(ocr_text)} karakter pada halaman {page_num + 1}.\n"
+                    )
+
+                    if ocr_text:
+                        # Gabungkan hasil OCR ke teks halaman (dengan label agar jelas di RAG)
+                        if page_text:
+                            page_text = page_text + "\n[OCR RESULT]\n" + ocr_text
+                        else:
+                            page_text = "[OCR RESULT]\n" + ocr_text
+                    else:
+                        sys.stderr.write(
+                            f"[OCR] Tidak ada teks yang terdeteksi pada halaman {page_num + 1}.\n"
+                        )
+            except Exception as e:
+                sys.stderr.write(f"[pdf_processor] OCR gagal pada halaman {page_num + 1}: {e}\n")
+                import traceback
+                sys.stderr.write(f"[pdf_processor] Traceback: {traceback.format_exc()}\n")
 
         # Gambar pada halaman
         image_descriptions = []
@@ -98,7 +234,7 @@ def process_pdf(path: str) -> str:
             )
 
         if combined_parts:
-            header = f"=== HALAMAN {page_index + 1} ==="
+            header = f"=== HALAMAN {page_num + 1} ==="
             result_pages.append(header + "\n" + "\n\n".join(combined_parts))
 
     doc.close()

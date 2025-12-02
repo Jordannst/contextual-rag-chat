@@ -328,4 +328,3 @@ export default function DocumentList({ onDocumentDeleted, refreshTrigger }: Docu
     </>
   );
 }
-
