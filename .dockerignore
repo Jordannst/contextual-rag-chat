@@ -17,6 +17,11 @@ build/
 *.so
 *.dylib
 
+# Backend folder (exclude from frontend build)
+backend/
+backend.exe
+test.exe
+
 # Uploads and temporary files
 uploads/
 tmp/
@@ -54,11 +59,14 @@ coverage/
 
 # Documentation
 README.md
+README_DOCKER.md
 *.md
 docs/
 
 # Docker files (don't copy into container)
 docker-compose.yml
-Dockerfile
 .dockerignore
+
+# Dockerfile in my-app folder (only copy the one being used)
+my-app/Dockerfile
 

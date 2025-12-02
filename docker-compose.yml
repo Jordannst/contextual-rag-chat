@@ -56,8 +56,8 @@ services:
   # Frontend Next.js
   frontend:
     build:
-      context: ./my-app
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./my-app/Dockerfile
     container_name: rag-chatbot-frontend
     depends_on:
       - backend
