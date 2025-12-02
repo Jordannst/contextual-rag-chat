@@ -571,7 +571,7 @@ func handleDataAnalysisFlow(c *gin.Context, req *ChatRequest, dataFilePaths map[
 	
 	// Step 5: Execute Python code
 	log.Printf("[DataAnalyst] Step 5: Executing Python code...\n")
-	result, err := utils.RunPythonAnalysis(filePath, pythonCode)
+	pythonOutput, err := utils.RunPythonAnalysis(filePath, pythonCode)
 	if err != nil {
 		log.Printf("[DataAnalyst] ERROR: Code execution failed: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -581,14 +581,36 @@ func handleDataAnalysisFlow(c *gin.Context, req *ChatRequest, dataFilePaths map[
 		})
 		return
 	}
-	log.Printf("[DataAnalyst] Step 5: Execution successful. Result: %s\n", result)
+	log.Printf("[DataAnalyst] Step 5: Execution successful. Output length: %d chars\n", len(pythonOutput))
 	
-	// Step 6: Format response (optional: use AI to format the answer)
-	// For now, we'll return the raw result. Can be enhanced later with AI formatting.
-	formattedResponse := result
-	if formattedResponse == "" {
-		formattedResponse = "Tidak ada hasil yang ditemukan."
+	// Step 6: Interpret Python output with AI (convert technical output to natural language)
+	log.Printf("[DataAnalyst] Step 6: Interpreting Python output with AI...\n")
+	
+	// Build context for AI interpretation
+	// Format sesuai requirement: Plaintext dengan instruksi jelas
+	interpretationContext := fmt.Sprintf(`[HASIL ANALISIS DATA PROGRAMMATIK]
+
+Dokumen: %s
+
+Hasil Eksekusi Python:
+
+%s
+
+INSTRUKSI:
+Jelaskan hasil analisis data di atas kepada user dengan bahasa yang natural, ringkas, dan mudah dimengerti. Jangan tampilkan kode atau struktur data mentah kecuali diminta.`, sourceFileName, pythonOutput)
+	
+	// Convert history to models.ChatMessage format
+	history := make([]models.ChatMessage, 0, len(req.History))
+	for _, msg := range req.History {
+		history = append(history, models.ChatMessage{
+			Role:    msg.Role,
+			Content: msg.Content,
+		})
 	}
+	
+	// Use StreamChatResponse to interpret the Python output
+	// We'll use the user's original question as the query, with the Python output as context
+	interpretationQuery := req.Question
 	
 	// Step 7: Handle session persistence (same as RAG flow)
 	var currentSessionID int
@@ -622,7 +644,7 @@ func handleDataAnalysisFlow(c *gin.Context, req *ChatRequest, dataFilePaths map[
 		}
 	}
 	
-	// Step 8: Send response (using SSE format for consistency with RAG flow)
+	// Step 8: Stream interpreted response using AI (using SSE format for consistency with RAG flow)
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -641,31 +663,152 @@ func handleDataAnalysisFlow(c *gin.Context, req *ChatRequest, dataFilePaths map[
 	fmt.Fprintf(c.Writer, "event: metadata\ndata: %s\n\n", sourcesJSON)
 	c.Writer.Flush()
 	
-	// Send result as chunks (split by newlines for better streaming)
-	lines := strings.Split(formattedResponse, "\n")
-	for _, line := range lines {
-		if line != "" {
-			chunkData := map[string]string{
-				"chunk": line + "\n",
-				"type":  "chunk",
+	// Step 8.1: Get streaming iterator for AI interpretation
+	// Pass the interpretation context as a single context document
+	contextDocs := []string{interpretationContext}
+	
+	iter, err := utils.StreamChatResponse(interpretationQuery, contextDocs, history)
+	if err != nil {
+		log.Printf("[DataAnalyst] ERROR: Failed to start streaming interpretation: %v\n", err)
+		
+		// Fallback: send raw Python output if interpretation fails
+		log.Printf("[DataAnalyst] WARNING: Falling back to raw Python output\n")
+		fallbackResponse := pythonOutput
+		if fallbackResponse == "" {
+			fallbackResponse = "Tidak ada hasil yang ditemukan."
+		}
+		
+		lines := strings.Split(fallbackResponse, "\n")
+		for _, line := range lines {
+			if line != "" {
+				chunkData := map[string]string{
+					"chunk": line + "\n",
+					"type":  "chunk",
+				}
+				chunkJSON, _ := json.Marshal(chunkData)
+				fmt.Fprintf(c.Writer, "data: %s\n\n", chunkJSON)
+				c.Writer.Flush()
 			}
-			chunkJSON, _ := json.Marshal(chunkData)
-			fmt.Fprintf(c.Writer, "data: %s\n\n", chunkJSON)
+		}
+		
+		// Save fallback response
+		if currentSessionID > 0 {
+			if err := db.SaveMessage(currentSessionID, "model", fallbackResponse); err != nil {
+				log.Printf("[DataAnalyst] WARNING: Failed to save AI message: %v\n", err)
+			}
+		}
+		
+		// Send completion event
+		completeData := map[string]interface{}{
+			"type":        "done",
+			"fullLength":  len(fallbackResponse),
+			"analysis":    true,
+		}
+		if currentSessionID > 0 {
+			completeData["sessionId"] = currentSessionID
+		}
+		completeJSON, _ := json.Marshal(completeData)
+		fmt.Fprintf(c.Writer, "event: done\ndata: %s\n\n", completeJSON)
+		c.Writer.Flush()
+		
+		log.Printf("[DataAnalyst] ===== Data Analyst flow completed with fallback =====\n")
+		return
+	}
+	
+	// Step 8.2: Stream chunks from iterator (same as RAG flow)
+	log.Printf("[DataAnalyst] Step 8.2: Streaming interpreted response...\n")
+	var fullResponse strings.Builder
+	chunkCount := 0
+	
+	for {
+		// Get next chunk from iterator
+		resp, err := iter.Next()
+		if err != nil {
+			// Check if iteration is done
+			if err == iterator.Done {
+				log.Printf("[DataAnalyst] Streaming completed. Total chunks: %d\n", chunkCount)
+				break
+			}
+			
+			// Check for other "done" indicators (fallback)
+			errStr := strings.ToLower(err.Error())
+			if strings.Contains(errStr, "done") ||
+				strings.Contains(errStr, "eof") ||
+				strings.Contains(errStr, "no more") {
+				log.Printf("[DataAnalyst] Streaming completed. Total chunks: %d\n", chunkCount)
+				break
+			}
+			
+			// Real error occurred
+			log.Printf("[DataAnalyst] ERROR during streaming: %v\n", err)
+			errorData := map[string]string{
+				"error":   "Streaming error",
+				"message": err.Error(),
+				"type":    "error",
+			}
+			errorJSON, _ := json.Marshal(errorData)
+			fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", errorJSON)
 			c.Writer.Flush()
+			return
+		}
+		
+		// Check if response is valid
+		if resp == nil {
+			continue
+		}
+		
+		// Extract text from response chunks
+		if resp.Candidates != nil && len(resp.Candidates) > 0 {
+			if resp.Candidates[0].Content != nil && len(resp.Candidates[0].Content.Parts) > 0 {
+				for _, part := range resp.Candidates[0].Content.Parts {
+					if textPart, ok := part.(genai.Text); ok {
+						text := string(textPart)
+						if text != "" {
+							// Send chunk with SSE format: data: <json>\n\n
+							chunkData := map[string]string{
+								"chunk": text,
+								"type":  "chunk",
+							}
+							chunkJSON, err := json.Marshal(chunkData)
+							if err != nil {
+								log.Printf("[DataAnalyst] ERROR marshaling chunk: %v\n", err)
+								continue
+							}
+							
+							// Send with SSE format: data: <json>\n\n
+							fmt.Fprintf(c.Writer, "data: %s\n\n", chunkJSON)
+							c.Writer.Flush()
+							
+							// Accumulate for logging and saving
+							fullResponse.WriteString(text)
+							chunkCount++
+							
+							log.Printf("[DataAnalyst] Chunk %d sent (length: %d)\n", chunkCount, len(text))
+						}
+					}
+				}
+			}
 		}
 	}
 	
-	// Save AI response to database
+	// Step 9: Save AI response to database
 	if currentSessionID > 0 {
-		if err := db.SaveMessage(currentSessionID, "model", formattedResponse); err != nil {
-			log.Printf("[DataAnalyst] WARNING: Failed to save AI message: %v\n", err)
+		aiResponse := fullResponse.String()
+		if aiResponse != "" {
+			if err := db.SaveMessage(currentSessionID, "model", aiResponse); err != nil {
+				log.Printf("[DataAnalyst] WARNING: Failed to save AI message: %v\n", err)
+			} else {
+				log.Printf("[DataAnalyst] Step 9: Saved AI response to session %d\n", currentSessionID)
+			}
 		}
 	}
 	
 	// Send completion event
+	log.Printf("[DataAnalyst] Step 10: Sending completion event...\n")
 	completeData := map[string]interface{}{
 		"type":        "done",
-		"fullLength":  len(formattedResponse),
+		"totalChunks": chunkCount,
+		"fullLength":  fullResponse.Len(),
 		"analysis":    true,
 	}
 	if currentSessionID > 0 {
@@ -675,5 +818,5 @@ func handleDataAnalysisFlow(c *gin.Context, req *ChatRequest, dataFilePaths map[
 	fmt.Fprintf(c.Writer, "event: done\ndata: %s\n\n", completeJSON)
 	c.Writer.Flush()
 	
-	log.Printf("[DataAnalyst] ===== Data Analyst flow completed successfully =====\n")
+	log.Printf("[DataAnalyst] ===== Data Analyst flow completed successfully (total: %d chars, %d chunks, session: %d) =====\n", fullResponse.Len(), chunkCount, currentSessionID)
 }
