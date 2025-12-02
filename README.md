@@ -964,7 +964,7 @@ go run cmd/test-analysis-code-gen/main.go
 
 ## License
 
-[Your License Here]
+[ ]
 
 ---
 
