@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"backend/db"
@@ -29,6 +30,33 @@ type ChatResponse struct {
 	SessionID *int     `json:"sessionId,omitempty"` // Return session ID (new or existing)
 }
 
+// extractChartData extracts [CHART_DATA:...] markers from Python output
+// Returns: cleanOutput (without chart markers) and chartParts (array of base64 strings)
+func extractChartData(output string) (string, []string) {
+	// Pattern untuk mendeteksi [CHART_DATA:...base64...]
+	// Format: [CHART_DATA:...] dimana ... adalah base64 string
+	chartPattern := regexp.MustCompile(`\[CHART_DATA:([^\]]+)\]`)
+	
+	// Find all matches
+	matches := chartPattern.FindAllStringSubmatch(output, -1)
+	
+	// Extract chart data (base64 strings)
+	chartParts := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) >= 2 {
+			chartParts = append(chartParts, match[1]) // match[1] is the captured base64 string
+		}
+	}
+	
+	// Remove all chart markers from output
+	cleanOutput := chartPattern.ReplaceAllString(output, "")
+	
+	// Clean up extra whitespace/newlines that might be left
+	cleanOutput = strings.TrimSpace(cleanOutput)
+	
+	return cleanOutput, chartParts
+}
+
 func ChatHandler(c *gin.Context) {
 	log.Printf("[Chat] ===== Starting chat request (Streaming) =====\n")
 
@@ -44,54 +72,101 @@ func ChatHandler(c *gin.Context) {
 	log.Printf("[Chat] Step 1: Request diterima - Question: %s, History length: %d\n", req.Question, len(req.History))
 
 	// Step 1.1: Detect file type and decide on flow (RAG vs Data Analyst)
+	// STRICT BRANCHING: Check file extension to determine routing
 	fileFilters := req.SelectedFiles
 	var isDataAnalysisFlow bool
 	var dataFilePaths map[string]string
 	
+	// Get file names to check (from SelectedFiles or auto-latest)
+	var fileNamesToCheck []string
 	if len(fileFilters) > 0 {
-		log.Printf("[Chat] Step 1.1: Detecting file types from selected files: %v\n", fileFilters)
+		// User explicitly selected files
+		fileNamesToCheck = fileFilters
+		log.Printf("[Chat] Step 1.1: Checking selected files: %v\n", fileFilters)
+	} else {
+		// No selected files - get latest uploaded file from database
+		log.Printf("[Chat] Step 1.1: No file selected, fetching latest document from database...\n")
+		latestFile, err := db.GetLatestDocument()
+		if err != nil {
+			log.Printf("[Chat] WARNING: Failed to get latest document: %v. Defaulting to RAG flow.\n", err)
+			isDataAnalysisFlow = false
+		} else if latestFile == "" {
+			// No documents in database
+			log.Printf("[Chat] Step 1.1: No documents found in database. Defaulting to RAG flow.\n")
+			isDataAnalysisFlow = false
+		} else {
+			// Use latest file as default
+			fileNamesToCheck = []string{latestFile}
+			log.Printf("[Chat] Step 1.1: No file selected, defaulting to latest file: %s\n", latestFile)
+		}
+	}
+	
+	// STRICT BRANCHING: Check each file's extension
+	if len(fileNamesToCheck) > 0 {
+		var detectedDataFiles []string
+		var detectedTextFiles []string
 		
-		// Check if all selected files are data files (CSV/Excel)
-		allDataFiles := true
-		hasTextDocs := false
-		
-		for _, fileName := range fileFilters {
+		// Categorize files by extension
+		for _, fileName := range fileNamesToCheck {
+			ext := utils.GetFileExtension(fileName)
+			log.Printf("[Chat] Step 1.1: File: %s, Extension: %s\n", fileName, ext)
+			
 			if utils.IsDataFile(fileName) {
-				// This is a data file
+				detectedDataFiles = append(detectedDataFiles, fileName)
+				log.Printf("[Chat] Step 1.1: ✅ Detected DATA FILE: %s (ext: %s)\n", fileName, ext)
 			} else if utils.IsTextDocument(fileName) {
-				hasTextDocs = true
-				allDataFiles = false
+				detectedTextFiles = append(detectedTextFiles, fileName)
+				log.Printf("[Chat] Step 1.1: ✅ Detected TEXT DOCUMENT: %s (ext: %s)\n", fileName, ext)
 			} else {
-				// Unknown file type, default to RAG
-				allDataFiles = false
+				log.Printf("[Chat] Step 1.1: ⚠️ Unknown file type: %s (ext: %s) - Defaulting to RAG\n", fileName, ext)
 			}
 		}
 		
-		// Decision: If ALL files are data files AND no text docs, use Data Analyst flow
-		// Otherwise, use RAG flow (safer default)
-		if allDataFiles && !hasTextDocs && len(fileFilters) > 0 {
+		// STRICT DECISION: If ANY file is CSV/Excel, use Data Analyst flow
+		// Only use RAG if ALL files are text documents (PDF/TXT/DOCX)
+		if len(detectedDataFiles) > 0 {
+			// At least one data file detected - use Data Analyst flow
 			isDataAnalysisFlow = true
-			log.Printf("[Chat] Step 1.1: ✅ All selected files are data files (CSV/Excel) - Using Data Analyst flow\n")
+			log.Printf("[Chat] Step 1.1: 🎯 ROUTING DECISION: Data Analyst Flow (found %d data file(s): %v)\n", 
+				len(detectedDataFiles), detectedDataFiles)
 			
 			// Get file paths for data files
 			var err error
-			dataFilePaths, err = utils.GetFilePathFromSourceFiles(fileFilters)
+			dataFilePaths, err = utils.GetFilePathFromSourceFiles(detectedDataFiles)
 			if err != nil {
 				log.Printf("[Chat] WARNING: Failed to get some file paths: %v\n", err)
 			}
 			
 			// Check if we have at least one valid file path
 			if len(dataFilePaths) == 0 {
-				log.Printf("[Chat] WARNING: No valid file paths found, falling back to RAG flow\n")
+				log.Printf("[Chat] ERROR: No valid file paths found for data files! Falling back to RAG flow\n")
 				isDataAnalysisFlow = false
+			} else {
+				log.Printf("[Chat] Step 1.1: ✅ Found %d valid data file path(s)\n", len(dataFilePaths))
 			}
-		} else {
-			log.Printf("[Chat] Step 1.1: Using RAG flow (has text documents or mixed file types)\n")
+		} else if len(detectedTextFiles) > 0 {
+			// Only text documents - use RAG flow
 			isDataAnalysisFlow = false
+			log.Printf("[Chat] Step 1.1: 🎯 ROUTING DECISION: RAG Flow (found %d text document(s): %v)\n", 
+				len(detectedTextFiles), detectedTextFiles)
+		} else {
+			// Unknown file types - default to RAG
+			isDataAnalysisFlow = false
+			log.Printf("[Chat] Step 1.1: 🎯 ROUTING DECISION: RAG Flow (unknown file types)\n")
 		}
+	}
+	
+	// Final logging for debugging
+	mode := "RAG"
+	if isDataAnalysisFlow {
+		mode = "Data Analyst"
+	}
+	if len(fileNamesToCheck) > 0 {
+		firstFile := fileNamesToCheck[0]
+		ext := utils.GetFileExtension(firstFile)
+		log.Printf("[Chat] Step 1.1: 📊 FINAL ROUTING - File: %s, Extension: %s, Mode: %s\n", firstFile, ext, mode)
 	} else {
-		log.Printf("[Chat] Step 1.1: No file filter - Using RAG flow (default)\n")
-		isDataAnalysisFlow = false
+		log.Printf("[Chat] Step 1.1: 📊 FINAL ROUTING - No files selected, Mode: %s\n", mode)
 	}
 
 	// Branch: Data Analyst Flow (CSV/Excel)
@@ -583,21 +658,48 @@ func handleDataAnalysisFlow(c *gin.Context, req *ChatRequest, dataFilePaths map[
 	}
 	log.Printf("[DataAnalyst] Step 5: Execution successful. Output length: %d chars\n", len(pythonOutput))
 	
+	// Step 5.5: Extract chart data from Python output to save tokens and prevent AI confusion
+	log.Printf("[DataAnalyst] Step 5.5: Extracting chart data from Python output...\n")
+	cleanOutput, chartParts := extractChartData(pythonOutput)
+	log.Printf("[DataAnalyst] Step 5.5: Extracted %d chart(s). Clean output length: %d chars (saved %d chars)\n", 
+		len(chartParts), len(cleanOutput), len(pythonOutput)-len(cleanOutput))
+	
 	// Step 6: Interpret Python output with AI (convert technical output to natural language)
 	log.Printf("[DataAnalyst] Step 6: Interpreting Python output with AI...\n")
 	
-	// Build context for AI interpretation
+	// Build context for AI interpretation using cleanOutput (without chart data)
 	// Format sesuai requirement: Plaintext dengan instruksi jelas
+	// Inject Chart Awareness: Informasikan AI tentang keberadaan grafik
+	var outputText string
+	if cleanOutput == "" && len(chartParts) > 0 {
+		// Jika output teks kosong tapi ada chart, tambahkan placeholder
+		outputText = "Visualisasi grafik telah berhasil dibuat."
+		log.Printf("[DataAnalyst] Step 6: Clean output is empty but charts exist, adding placeholder text\n")
+	} else {
+		outputText = cleanOutput
+	}
+	
+	// Build base context
 	interpretationContext := fmt.Sprintf(`[HASIL ANALISIS DATA PROGRAMMATIK]
 
 Dokumen: %s
 
 Hasil Eksekusi Python:
 
-%s
+%s`, sourceFileName, outputText)
+	
+	// Add chart awareness if charts exist
+	if len(chartParts) > 0 {
+		chartInfo := fmt.Sprintf("\n\n[SYSTEM INFO]: Sebanyak %d grafik visual telah berhasil di-generate dan dikirim ke user secara terpisah. Gunakan data teks di atas untuk menjelaskan insight grafik tersebut. JANGAN bilang tidak ada grafik atau tidak ada informasi.", len(chartParts))
+		interpretationContext += chartInfo
+		log.Printf("[DataAnalyst] Step 6: Injected chart awareness (%d chart(s))\n", len(chartParts))
+	}
+	
+	// Add instructions
+	interpretationContext += `
 
 INSTRUKSI:
-Jelaskan hasil analisis data di atas kepada user dengan bahasa yang natural, ringkas, dan mudah dimengerti. Jangan tampilkan kode atau struktur data mentah kecuali diminta.`, sourceFileName, pythonOutput)
+Jelaskan hasil analisis data di atas kepada user dengan bahasa yang natural, ringkas, dan mudah dimengerti. Jangan tampilkan kode atau struktur data mentah kecuali diminta.`
 	
 	// Convert history to models.ChatMessage format
 	history := make([]models.ChatMessage, 0, len(req.History))
@@ -671,9 +773,9 @@ Jelaskan hasil analisis data di atas kepada user dengan bahasa yang natural, rin
 	if err != nil {
 		log.Printf("[DataAnalyst] ERROR: Failed to start streaming interpretation: %v\n", err)
 		
-		// Fallback: send raw Python output if interpretation fails
-		log.Printf("[DataAnalyst] WARNING: Falling back to raw Python output\n")
-		fallbackResponse := pythonOutput
+		// Fallback: send clean Python output if interpretation fails
+		log.Printf("[DataAnalyst] WARNING: Falling back to clean Python output\n")
+		fallbackResponse := cleanOutput
 		if fallbackResponse == "" {
 			fallbackResponse = "Tidak ada hasil yang ditemukan."
 		}
@@ -691,6 +793,21 @@ Jelaskan hasil analisis data di atas kepada user dengan bahasa yang natural, rin
 			}
 		}
 		
+		// Send chart data in fallback case too
+		if len(chartParts) > 0 {
+			log.Printf("[DataAnalyst] Sending %d chart(s) in fallback...\n", len(chartParts))
+			for i, chartData := range chartParts {
+				chartEvent := map[string]interface{}{
+					"type":      "chart",
+					"chartData": chartData,
+					"index":     i,
+				}
+				chartJSON, _ := json.Marshal(chartEvent)
+				fmt.Fprintf(c.Writer, "event: chart\ndata: %s\n\n", chartJSON)
+				c.Writer.Flush()
+			}
+		}
+		
 		// Save fallback response
 		if currentSessionID > 0 {
 			if err := db.SaveMessage(currentSessionID, "model", fallbackResponse); err != nil {
@@ -700,9 +817,10 @@ Jelaskan hasil analisis data di atas kepada user dengan bahasa yang natural, rin
 		
 		// Send completion event
 		completeData := map[string]interface{}{
-			"type":        "done",
-			"fullLength":  len(fallbackResponse),
-			"analysis":    true,
+			"type":       "done",
+			"fullLength": len(fallbackResponse),
+			"analysis":   true,
+			"chartCount": len(chartParts),
 		}
 		if currentSessionID > 0 {
 			completeData["sessionId"] = currentSessionID
@@ -791,25 +909,42 @@ Jelaskan hasil analisis data di atas kepada user dengan bahasa yang natural, rin
 		}
 	}
 	
-	// Step 9: Save AI response to database
+	// Step 9: Send chart data if any (before saving to DB)
+	if len(chartParts) > 0 {
+		log.Printf("[DataAnalyst] Step 9: Sending %d chart(s) to frontend...\n", len(chartParts))
+		for i, chartData := range chartParts {
+			chartEvent := map[string]interface{}{
+				"type":      "chart",
+				"chartData": chartData,
+				"index":     i,
+			}
+			chartJSON, _ := json.Marshal(chartEvent)
+			fmt.Fprintf(c.Writer, "event: chart\ndata: %s\n\n", chartJSON)
+			c.Writer.Flush()
+			log.Printf("[DataAnalyst] Chart %d sent (length: %d chars)\n", i+1, len(chartData))
+		}
+	}
+	
+	// Step 10: Save AI response to database (without chart data)
 	if currentSessionID > 0 {
 		aiResponse := fullResponse.String()
 		if aiResponse != "" {
 			if err := db.SaveMessage(currentSessionID, "model", aiResponse); err != nil {
 				log.Printf("[DataAnalyst] WARNING: Failed to save AI message: %v\n", err)
 			} else {
-				log.Printf("[DataAnalyst] Step 9: Saved AI response to session %d\n", currentSessionID)
+				log.Printf("[DataAnalyst] Step 10: Saved AI response to session %d\n", currentSessionID)
 			}
 		}
 	}
 	
 	// Send completion event
-	log.Printf("[DataAnalyst] Step 10: Sending completion event...\n")
+	log.Printf("[DataAnalyst] Step 11: Sending completion event...\n")
 	completeData := map[string]interface{}{
 		"type":        "done",
-		"totalChunks": chunkCount,
+		"totalChunks":  chunkCount,
 		"fullLength":  fullResponse.Len(),
 		"analysis":    true,
+		"chartCount":  len(chartParts),
 	}
 	if currentSessionID > 0 {
 		completeData["sessionId"] = currentSessionID

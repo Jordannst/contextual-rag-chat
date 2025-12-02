@@ -454,3 +454,39 @@ func GetRandomContext(limit int) ([]string, error) {
 	return contexts, nil
 }
 
+// GetLatestDocument returns the source_file name of the most recently uploaded document
+// Returns empty string if no documents found (not an error)
+// Uses MAX(id) to find the most recent chunk, then gets its source_file
+func GetLatestDocument() (string, error) {
+	if Pool == nil {
+		return "", fmt.Errorf("database pool is not initialized")
+	}
+
+	ctx := context.Background()
+
+	// Query to get the most recent document's source_file
+	// We use MAX(id) to find the chunk with highest ID (most recently inserted)
+	// This ensures we get the file that was uploaded most recently
+	query := `
+		SELECT source_file
+		FROM documents
+		WHERE source_file IS NOT NULL AND source_file != ''
+			AND id = (SELECT MAX(id) FROM documents WHERE source_file IS NOT NULL AND source_file != '')
+		LIMIT 1
+	`
+
+	var sourceFile string
+	err := Pool.QueryRow(ctx, query).Scan(&sourceFile)
+	if err != nil {
+		// If no rows found, return empty string (not an error)
+		// Check for pgx specific "no rows" error
+		if err.Error() == "no rows in result set" || 
+		   err.Error() == "scanning one row, found zero rows" {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to get latest document: %w", err)
+	}
+
+	return sourceFile, nil
+}
+

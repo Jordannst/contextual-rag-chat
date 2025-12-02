@@ -436,6 +436,23 @@ export default function Home() {
                   );
                 }
               }
+              // Handle chart event (data visualization)
+              else if (eventType === 'chart' || data.type === 'chart') {
+                const chartData = data.chartData;
+                if (chartData && typeof chartData === 'string') {
+                  // Append chart marker to message content so ChatBubble can render it
+                  // Format: [CHART_DATA:...base64...]
+                  const chartMarker = `\n[CHART_DATA:${chartData}]`;
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === aiMessageId
+                        ? { ...msg, text: msg.text + chartMarker }
+                        : msg
+                    )
+                  );
+                  console.log('Received chart data:', { index: data.index || 0, dataLength: chartData.length });
+                }
+              }
               // Handle done event (streaming completed)
               else if (eventType === 'done' || data.type === 'done') {
                 console.log('Streaming completed:', {

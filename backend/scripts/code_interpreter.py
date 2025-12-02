@@ -8,7 +8,13 @@ import sys
 import io
 import os
 import json
+import base64
+import re
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 def usage_and_exit():
@@ -42,9 +48,18 @@ def load_data(file_path: str) -> pd.DataFrame:
 def sanitize_code(code: str) -> str:
     """
     Sanitasi kode sederhana untuk keamanan dasar
-    Cegah penggunaan fungsi berbahaya
+    Cegah penggunaan fungsi berbahaya dan auto-fix common issues
     """
+    # Auto-fix: Replace plt.show() dengan show_chart() (case-insensitive)
+    # Handle berbagai variasi: plt.show(), plt.show( ), plt.show(block=True), dll
+    # Pattern untuk match plt.show() dengan berbagai variasi
+    # Match: plt.show() atau plt.show(...) dengan parameter apapun
+    plt_show_pattern = re.compile(r'plt\.show\s*\([^)]*\)', re.IGNORECASE)
+    code = plt_show_pattern.sub('show_chart()', code)
+    
     # Daftar keywords berbahaya yang tidak boleh ada
+    # Note: matplotlib dan seaborn sudah diimport, jadi tidak perlu block
+    # plt.show() sudah di-handle dengan auto-replace di atas, jadi tidak perlu di-forbidden
     dangerous_keywords = [
         "import os",
         "import sys",
@@ -73,16 +88,48 @@ def sanitize_code(code: str) -> str:
 def run_code(df: pd.DataFrame, code: str) -> str:
     """
     Jalankan kode Python dengan dataframe yang tersedia
-    Tangkap output dari print statements
+    Tangkap output dari print statements dan chart data
     """
     # Siapkan environment untuk exec
     # Berikan akses ke pandas dan numpy (common libraries untuk analisis)
     import numpy as np
     
+    # Helper function untuk menampilkan chart
+    def show_chart():
+        """
+        Simpan plot saat ini ke buffer memory, encode ke Base64,
+        dan print dengan format khusus untuk parsing Go.
+        Setelah mencetak, tutup figure agar tidak terjadi duplikasi.
+        """
+        # Cek apakah ada figure aktif
+        if len(plt.get_fignums()) == 0:
+            # Tidak ada figure, tidak perlu melakukan apa-apa
+            return
+        
+        # Simpan plot ke buffer memory
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight')
+        buffer.seek(0)
+        
+        # Encode ke Base64 string
+        chart_base64 = base64.b64encode(buffer.read()).decode('utf-8')
+        
+        # Print dengan format khusus untuk parsing Go
+        print(f"[CHART_DATA:{chart_base64}]")
+        
+        # Tutup semua figure setelah mencetak agar tidak terjadi duplikasi
+        # Ini penting untuk auto-flush: jika AI sudah panggil show_chart(), 
+        # figure sudah ditutup, jadi auto-flush tidak akan duplikat
+        plt.close('all')
+        buffer.close()
+    
     exec_globals = {
         "df": df,
         "pd": pd,
         "np": np,
+        "plt": plt,
+        "sns": sns,
+        "show_chart": show_chart,
         "__builtins__": __builtins__,
     }
     
@@ -94,6 +141,16 @@ def run_code(df: pd.DataFrame, code: str) -> str:
         # Jalankan kode
         exec(code, exec_globals)
         
+        # AUTO-FLUSH: Cek apakah ada figure matplotlib yang aktif setelah exec selesai
+        # Ini memastikan grafik tetap terkirim meskipun AI lupa memanggil show_chart()
+        active_figures = plt.get_fignums()
+        if len(active_figures) > 0:
+            # Ada figure aktif yang belum di-display
+            # Panggil show_chart() secara otomatis
+            sys.stderr.write(f"[CodeInterpreter] Auto-flush: Found {len(active_figures)} active figure(s), automatically calling show_chart()\n")
+            show_chart()
+            # Note: show_chart() sudah menutup figure, jadi tidak perlu close lagi
+        
         # Ambil output
         output = captured_output.getvalue()
         return output.strip()
@@ -101,6 +158,8 @@ def run_code(df: pd.DataFrame, code: str) -> str:
     finally:
         # Restore stdout
         sys.stdout = old_stdout
+        # Cleanup: close any remaining figures (safety net, biasanya sudah ditutup oleh show_chart)
+        plt.close('all')
 
 
 def main():
@@ -119,7 +178,12 @@ def main():
         
         # Sanitasi kode
         sys.stderr.write(f"[CodeInterpreter] Sanitizing code...\n")
+        original_code = code_to_run
         sanitized_code = sanitize_code(code_to_run)
+        
+        # Log jika ada perubahan (auto-fix)
+        if original_code != sanitized_code:
+            sys.stderr.write(f"[CodeInterpreter] Auto-fixed code (replaced plt.show() with show_chart())\n")
         
         # Jalankan kode
         sys.stderr.write(f"[CodeInterpreter] Executing code:\n{sanitized_code}\n")

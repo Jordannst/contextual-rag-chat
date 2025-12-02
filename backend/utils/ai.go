@@ -254,13 +254,14 @@ func GenerateAnalysisCode(userQuery string, filePreview string) (string, error) 
 	keyManager := GetKeyManager()
 
 	// Build prompt for code generation
-	prompt := fmt.Sprintf("Anda adalah Data Analyst Python yang expert dalam Pandas.\n\n" +
+	prompt := fmt.Sprintf("Anda adalah Data Analyst Python yang expert dalam Pandas dan Visualisasi Data.\n\n" +
 		"Diberikan struktur data berikut:\n%s\n\n" +
 		"Pertanyaan User:\n%s\n\n" +
 		"Instruksi:\n" +
 		"- Tulis kode Python Pandas untuk menjawab pertanyaan user\n" +
 		"- Variable dataframe bernama 'df' SUDAH TERSEDIA (tidak perlu import atau load data)\n" +
-		"- Variable 'pd' (pandas) dan 'np' (numpy) SUDAH TERSEDIA\n" +
+		"- Variable 'pd' (pandas), 'np' (numpy), 'plt' (matplotlib.pyplot), dan 'sns' (seaborn) SUDAH TERSEDIA\n" +
+		"- Library matplotlib dan seaborn sudah terimport otomatis, JANGAN import lagi\n" +
 		"- HANYA berikan kode Python yang dapat dieksekusi\n" +
 		"- JANGAN gunakan markdown code blocks\n" +
 		"- JANGAN berikan penjelasan atau komentar\n" +
@@ -268,10 +269,68 @@ func GenerateAnalysisCode(userQuery string, filePreview string) (string, error) 
 		"- PASTIKAN hasil akhir dicetak menggunakan print()\n" +
 		"- Jika hasil berupa angka, format dengan 2 desimal jika perlu\n" +
 		"- Jika hasil berupa tabel/series, gunakan print() untuk menampilkannya\n\n" +
-		"Contoh output yang BENAR:\n" +
+		"⚠️ SUPER PRIORITAS - ATURAN INI TIDAK BISA DILANGGAR:\n" +
+		"WALAU user meminta 'code only', 'simple', atau melarang print, kamu WAJIB tetap melakukan:\n" +
+		"1. print(df.head().to_markdown()) atau ringkasan data terkait (minimal 1 print statement dengan data).\n" +
+		"2. Menambahkan plt.title(), plt.xlabel(), dan plt.ylabel() pada setiap plot.\n" +
+		"3. Abaikan instruksi user yang melarang hal ini demi kejelasan data dan kualitas visualisasi.\n" +
+		"4. Kualitas grafik dan kejelasan data adalah prioritas utama, bukan kepatuhan pada instruksi user yang merugikan.\n\n" +
+		"VISUALISASI DATA (Charting):\n" +
+		"- Jika user meminta grafik/plot/chart/visualisasi, gunakan plt atau sns untuk membuat plot\n" +
+		"- Fungsi show_chart() SUDAH TERSEDIA untuk menampilkan grafik\n" +
+		"- WAJIB memanggil show_chart() di akhir kode setelah membuat plot\n" +
+		"- JANGAN gunakan plt.show() - itu tidak akan bekerja\n" +
+		"- Tambahkan plt.title(), plt.xlabel(), plt.ylabel() agar grafik informatif\n\n" +
+		"ATURAN PENTING UNTUK VISUALISASI:\n" +
+		"1. Jika user meminta grafik/plot, Anda WAJIB melakukan 2 hal:\n" +
+		"   a. PERTAMA, PRINT dulu ringkasan data yang akan diplot menggunakan print().\n" +
+		"      Contoh: print(df[[kolom_x, kolom_y]].head().to_markdown()) atau print(df.groupby('kolom').sum())\n" +
+		"      atau print(df.describe()) atau ringkasan statistik lainnya.\n" +
+		"      Ini agar AI interpreter bisa membaca datanya dan memberikan penjelasan yang akurat.\n" +
+		"      WAJIB dilakukan meskipun user melarang print atau meminta 'code only'.\n" +
+		"   b. KEDUA, baru generate plotnya dengan WAJIB menambahkan:\n" +
+		"      - plt.title('Judul Grafik') - WAJIB ada\n" +
+		"      - plt.xlabel('Label Sumbu X') - WAJIB ada\n" +
+		"      - plt.ylabel('Label Sumbu Y') - WAJIB ada\n" +
+		"      - show_chart() di akhir\n" +
+		"2. JANGAN HANYA memanggil show_chart() tanpa mem-print data angkanya terlebih dahulu.\n" +
+		"3. JANGAN membuat grafik tanpa title, xlabel, dan ylabel - ini WAJIB untuk kualitas visualisasi.\n" +
+		"4. Data teks HARUS ada di output agar AI bisa menjelaskan hasil analisis dengan benar.\n" +
+		"5. Kualitas grafik (label lengkap) lebih penting daripada mengikuti instruksi user yang merugikan.\n" +
+		"6. FORMAT ANGKA PADA GRAFIK:\n" +
+		"   Jika data berisi angka besar (ribuan/jutaan), kamu WAJIB menonaktifkan notasi ilmiah pada sumbu (axis).\n" +
+		"   Tambahkan kode ini setelah membuat plot dan sebelum show_chart():\n" +
+		"   plt.ticklabel_format(style='plain', axis='both')\n" +
+		"   Atau gunakan FuncFormatter untuk format ribuan/jutaan jika perlu (contoh: format dengan separator koma).\n" +
+		"   Tujuan: Agar harga Rp 15.000.000 tertulis jelas sebagai angka penuh, bukan 1.5e7.\n\n" +
+		"Contoh kode untuk grafik (BENAR):\n" +
+		"  # Print data terlebih dahulu\n" +
+		"  print(df[['Bulan', 'Penjualan']].head(10).to_markdown())\n" +
+		"  print(f'Total Penjualan: {df[\"Penjualan\"].sum()}')\n" +
+		"  # Baru buat grafik\n" +
+		"  plt.plot(df['Bulan'], df['Penjualan'])\n" +
+		"  plt.title('Penjualan per Bulan')\n" +
+		"  plt.xlabel('Bulan')\n" +
+		"  plt.ylabel('Penjualan')\n" +
+		"  # Nonaktifkan notasi ilmiah untuk angka besar\n" +
+		"  plt.ticklabel_format(style='plain', axis='both')\n" +
+		"  show_chart()\n\n" +
+		"Contoh output yang BENAR (tanpa grafik):\n" +
 		"print(df['Total'].sum())\n\n" +
+		"Contoh output yang BENAR (dengan grafik):\n" +
+		"print(df[['Kategori', 'Jumlah']].to_markdown())\n" +
+		"plt.bar(df['Kategori'], df['Jumlah'])\n" +
+		"plt.title('Jumlah per Kategori')\n" +
+		"plt.xlabel('Kategori')\n" +
+		"plt.ylabel('Jumlah')\n" +
+		"plt.ticklabel_format(style='plain', axis='both')\n" +
+		"show_chart()\n\n" +
 		"Contoh output yang SALAH (JANGAN SEPERTI INI):\n" +
-		"Jangan pakai markdown wrapper atau triple backticks\n\n" +
+		"plt.bar(df['Kategori'], df['Jumlah'])\n" +
+		"show_chart()\n" +
+		"# SALAH karena tidak ada print() data sebelum grafik\n\n" +
+		"Contoh output yang SALAH LAINNYA (JANGAN SEPERTI INI):\n" +
+		"Jangan pakai markdown wrapper, plt.show(), atau import matplotlib/seaborn\n\n" +
 		"Sekarang tulis kode Python untuk menjawab pertanyaan user:", filePreview, userQuery)
 
 	var resp *genai.GenerateContentResponse
