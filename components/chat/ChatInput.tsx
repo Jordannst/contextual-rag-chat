@@ -4,23 +4,44 @@ import React, { useState, useRef, useEffect } from 'react';
 
 interface ChatInputProps {
   onSend: (message: string, selectedFiles?: string[]) => void;
+  onFileUpload?: (files: File[]) => void; // Callback when files are selected
   isLoading?: boolean;
   placeholder?: string;
   availableDocuments?: string[]; // List of available document names for filtering
+  selectedDocFilters?: string[]; // Controlled selected filters (optional)
+  onSelectedDocFiltersChange?: (filters: string[]) => void; // Callback when filters change
 }
 
 export default function ChatInput({ 
-  onSend, 
+  onSend,
+  onFileUpload,
   isLoading = false,
   placeholder = 'Enter a prompt here',
-  availableDocuments = []
+  availableDocuments = [],
+  selectedDocFilters: controlledSelectedDocFilters,
+  onSelectedDocFiltersChange
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
-  const [selectedDocFilters, setSelectedDocFilters] = useState<string[]>([]);
+  const [internalSelectedDocFilters, setInternalSelectedDocFilters] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Use controlled state if provided, otherwise use internal state
+  const selectedDocFilters = controlledSelectedDocFilters !== undefined 
+    ? controlledSelectedDocFilters 
+    : internalSelectedDocFilters;
+
+  const setSelectedDocFilters = (filters: string[] | ((prev: string[]) => string[])) => {
+    const newFilters = typeof filters === 'function' ? filters(selectedDocFilters) : filters;
+    if (onSelectedDocFiltersChange) {
+      onSelectedDocFiltersChange(newFilters);
+    } else {
+      setInternalSelectedDocFilters(newFilters);
+    }
+  };
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -84,6 +105,22 @@ export default function ChatInput({
     }
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0 && onFileUpload) {
+      const fileArray = Array.from(files);
+      onFileUpload(fileArray);
+    }
+    // Reset input so same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handlePaperclipClick = () => {
+    fileInputRef.current?.click();
+  };
+
   return (
     <div className="sticky bottom-0 bg-transparent backdrop-blur-xl border-t border-white/5 py-4 px-4 transition-colors duration-300">
       <div className="max-w-screen-md mx-auto">
@@ -97,13 +134,36 @@ export default function ChatInput({
               }
             `}
           >
+            {/* File Upload Button (Paperclip) */}
+            <button
+              type="button"
+              onClick={handlePaperclipClick}
+              disabled={isLoading}
+              className="absolute left-2 bottom-2 w-8 h-8 rounded-full flex items-center justify-center bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-300 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Upload attachment"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+            </button>
+
+            {/* Hidden File Input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              accept=".pdf,.txt,.docx,.csv,.xlsx,.xls"
+              onChange={handleFileSelect}
+            />
+
             {/* Filter Button */}
             {availableDocuments.length > 0 && (
               <button
                 type="button"
                 onClick={() => setShowFilter(!showFilter)}
                 className={`
-                  absolute left-2 bottom-2 w-8 h-8 rounded-full flex items-center justify-center
+                  absolute left-11 bottom-2 w-8 h-8 rounded-full flex items-center justify-center
                   transition-all duration-200
                   ${selectedDocFilters.length > 0
                     ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/50'
@@ -132,7 +192,7 @@ export default function ChatInput({
               onBlur={() => setIsFocused(false)}
               placeholder={placeholder}
               rows={1}
-              className={`
+                className={`
                 w-full py-3 rounded-full
                 text-[15px] text-neutral-100
                 placeholder:text-neutral-500
@@ -140,7 +200,7 @@ export default function ChatInput({
                 resize-none overflow-hidden
                 bg-transparent
                 transition-colors duration-300
-                ${availableDocuments.length > 0 ? 'px-12 pr-12' : 'px-5 pr-12'}
+                ${availableDocuments.length > 0 ? 'px-20 pr-12' : 'px-12 pr-12'}
               `}
               style={{ maxHeight: '120px' }}
               disabled={isLoading}

@@ -37,7 +37,9 @@ export default function Home() {
   const [suggestions, setSuggestions] = useState<string[]>([]); // Question suggestions
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [availableDocuments, setAvailableDocuments] = useState<string[]>([]); // List of available documents for filtering
+  const [selectedDocFilters, setSelectedDocFilters] = useState<string[]>([]); // Selected document filters for chat
   const [currentSessionId, setCurrentSessionId] = useState<number | null>(null); // Current chat session ID
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [sessions, setSessions] = useState<Array<{ id: number; title: string; created_at: string }>>([]); // Chat sessions for sidebar
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; sessionId: number | null; sessionTitle: string }>({
     isOpen: false,
@@ -90,24 +92,32 @@ export default function Home() {
   }, [messages.length, isUploading]);
 
   // Fetch available documents for filter
-  useEffect(() => {
-    const fetchDocuments = async () => {
-      try {
-        const response = await fetch('http://localhost:5000/api/documents');
-        if (response.ok) {
-          const data = await response.json();
-          setAvailableDocuments(data.documents || []);
-        }
-      } catch (error) {
-        console.error('Error fetching documents for filter:', error);
+  const fetchDocuments = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/documents');
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableDocuments(data.documents || []);
       }
-    };
+    } catch (error) {
+      console.error('Error fetching documents for filter:', error);
+    }
+  };
 
+  useEffect(() => {
     fetchDocuments();
     // Refresh when document list changes
     const interval = setInterval(fetchDocuments, 5000); // Refresh every 5 seconds
     return () => clearInterval(interval);
   }, [documentListRefreshTrigger]);
+
+  // Show toast notification
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(null);
+    }, 4000);
+  };
 
   // Load chat sessions on mount
   useEffect(() => {
@@ -285,9 +295,16 @@ export default function Home() {
         history: history,
       };
 
+      // Use selectedDocFilters if no selectedFiles provided, or merge them
+      const filesToUse = selectedFiles && selectedFiles.length > 0 
+        ? selectedFiles 
+        : selectedDocFilters.length > 0 
+          ? selectedDocFilters 
+          : undefined;
+
       // Add selectedFiles only if provided (not empty)
-      if (selectedFiles && selectedFiles.length > 0) {
-        requestBody.selectedFiles = selectedFiles;
+      if (filesToUse && filesToUse.length > 0) {
+        requestBody.selectedFiles = filesToUse;
       }
 
       // Add sessionId if exists
@@ -522,6 +539,80 @@ export default function Home() {
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // Handle file upload from chat input
+  const handleChatFileUpload = async (files: File[]) => {
+    if (files.length === 0) return;
+
+    // Show loading toast
+    showToast(`Mengunggah ${files.length} file...`, 'info');
+
+    const uploadedFileNames: string[] = [];
+    const errors: string[] = [];
+
+    // Upload files one by one
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      
+      // Update toast with progress
+      if (files.length > 1) {
+        showToast(`Mengunggah ${i + 1}/${files.length} file...`, 'info');
+      }
+
+      try {
+        const formData = new FormData();
+        formData.append('document', file);
+
+        const response = await fetch('http://localhost:5000/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || `Failed to upload ${file.name}`);
+        }
+
+        const data = await response.json();
+        uploadedFileNames.push(data.fileName || file.name);
+      } catch (error) {
+        const errorMsg = `Error uploading ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        errors.push(errorMsg);
+        console.error(errorMsg, error);
+      }
+    }
+
+    // Refresh document list
+    await fetchDocuments();
+
+    // Auto-select newly uploaded files
+    if (uploadedFileNames.length > 0) {
+      setSelectedDocFilters((prev) => {
+        const newFilters = [...prev];
+        uploadedFileNames.forEach((fileName) => {
+          if (!newFilters.includes(fileName)) {
+            newFilters.push(fileName);
+          }
+        });
+        return newFilters;
+      });
+
+      // Show success toast
+      if (uploadedFileNames.length === 1) {
+        showToast(`File "${uploadedFileNames[0]}" berhasil ditambahkan ke percakapan.`, 'success');
+      } else {
+        showToast(`${uploadedFileNames.length} file berhasil ditambahkan ke percakapan.`, 'success');
+      }
+    }
+
+    // Show error toast if any
+    if (errors.length > 0) {
+      showToast(`Beberapa file gagal diupload: ${errors.join(', ')}`, 'error');
+    }
+
+    // Trigger document list refresh
+    setDocumentListRefreshTrigger((prev) => prev + 1);
+  };
+
   // Start processing - upload all selected files
   const handleStartProcessing = async () => {
     if (selectedFiles.length === 0) return;
@@ -649,6 +740,45 @@ export default function Home() {
 
   return (
     <div className="h-screen bg-transparent flex overflow-hidden transition-colors duration-300">
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 animate-fade-slide-up">
+          <div
+            className={`
+              px-4 py-3 rounded-lg shadow-lg border flex items-center gap-3 backdrop-blur-lg
+              ${toast.type === 'success'
+                ? 'bg-green-900/90 border-green-700 text-green-100'
+                : toast.type === 'error'
+                ? 'bg-red-900/90 border-red-700 text-red-100'
+                : 'bg-blue-900/90 border-blue-700 text-blue-100'
+              }
+            `}
+          >
+            {toast.type === 'success' ? (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : toast.type === 'error' ? (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            )}
+            <span className="text-sm font-medium">{toast.message}</span>
+            <button
+              onClick={() => setToast(null)}
+              className="ml-2 text-current opacity-70 hover:opacity-100 transition-opacity"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
       {/* Sidebar */}
       <Sidebar 
         items={[
@@ -721,9 +851,12 @@ export default function Home() {
             </ChatContainer>
 
             <ChatInput 
-              onSend={handleSendMessage} 
+              onSend={handleSendMessage}
+              onFileUpload={handleChatFileUpload}
               isLoading={isLoading}
               availableDocuments={availableDocuments}
+              selectedDocFilters={selectedDocFilters}
+              onSelectedDocFiltersChange={setSelectedDocFilters}
             />
           </div>
         ) : (
