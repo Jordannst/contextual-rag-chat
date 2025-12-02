@@ -1,273 +1,372 @@
-# 🤖 AI RAG Chatbot
+# Enterprise RAG Chatbot
 
-<div align="center">
-
-![Next.js](https://img.shields.io/badge/Next.js-16.0-black?style=for-the-badge&logo=next.js)
-![React](https://img.shields.io/badge/React-19.2-blue?style=for-the-badge&logo=react)
-![Go](https://img.shields.io/badge/Go-1.24-blue?style=for-the-badge&logo=go)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?style=for-the-badge&logo=postgresql)
-![Gemini](https://img.shields.io/badge/Google%20Gemini-2.0-orange?style=for-the-badge&logo=google)
-
-**A modern, production-ready Retrieval-Augmented Generation (RAG) chatbot powered by Google Gemini AI**
-
-[Features](#-features) • [Tech Stack](#-tech-stack) • [Quick Start](#-quick-start) • [Architecture](#-architecture) • [API Documentation](#-api-documentation)
-
-</div>
+A production-grade Retrieval-Augmented Generation (RAG) system with multimodal document ingestion, hybrid search capabilities, and dynamic code execution for data analysis. Built with Go, Next.js, and Google Gemini AI.
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
-- [Overview](#-overview)
-- [Features](#-features)
-- [Tech Stack](#-tech-stack)
-- [Architecture](#-architecture)
-- [Prerequisites](#-prerequisites)
-- [Installation](#-installation)
-- [Configuration](#-configuration)
-- [Usage](#-usage)
-- [API Documentation](#-api-documentation)
-- [Project Structure](#-project-structure)
-- [Development](#-development)
-- [Troubleshooting](#-troubleshooting)
-- [Contributing](#-contributing)
-- [License](#-license)
+- [Overview](#overview)
+- [Key Technical Features](#key-technical-features)
+- [System Architecture](#system-architecture)
+- [Technology Stack](#technology-stack)
+- [Prerequisites](#prerequisites)
+- [Installation & Setup](#installation--setup)
+- [Configuration](#configuration)
+- [API Documentation](#api-documentation)
+- [Project Structure](#project-structure)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
-## 🎯 Overview
+## Overview
 
-**AI RAG Chatbot** is a sophisticated conversational AI application that combines the power of large language models with semantic document search. Upload PDF or text documents, and have intelligent conversations about their content using Google's Gemini AI models.
+Enterprise RAG Chatbot is a full-stack conversational AI system that combines semantic document search with intelligent code execution. The system supports multiple document types (PDF, TXT, DOCX, CSV, Excel) and provides two distinct processing pipelines:
 
-### Key Capabilities
+- **RAG Pipeline**: For text documents (PDF, TXT, DOCX) using hybrid search and semantic retrieval
+- **Data Analyst Pipeline**: For structured data (CSV, Excel) using dynamic Python code generation and execution
 
-- 📄 **Document Upload & Processing**: Upload PDF or TXT files with automatic text extraction and chunking
-- 🔍 **Hybrid Search**: Advanced search combining vector similarity (semantic) + full-text search (keyword)
-- 💬 **Context-Aware Chat**: Ask questions and get answers based on your uploaded documents
-- 🧠 **Conversation History**: Maintains context across multiple messages
-- ⚡ **Smart Chunking**: Intelligent text splitting with overlap for better context preservation
-- 📚 **Document Management**: View, delete, and sync documents with database
-- 📝 **Inline Citations**: Source references displayed directly in answers with blue styling
-- 🌊 **Streaming Response**: Real-time response streaming using Server-Sent Events (SSE)
-- 🎨 **Modern UI**: Beautiful, responsive interface inspired by Google's Gemini design
+The system features automatic file type detection, intelligent query routing, and AI-powered interpretation of technical outputs for enhanced user experience.
 
 ---
 
-## ✨ Features
+## Key Technical Features
 
-### 🚀 Core Features
+### Hybrid Search Engine
 
-- **Document Processing**
-  - Support for PDF and TXT files
-  - Automatic text extraction and chunking
-  - Smart sentence boundary detection
-  - Configurable chunk size and overlap
+The system implements a sophisticated hybrid search combining vector similarity and full-text search with weighted scoring:
 
-- **Vector Storage & Search**
-  - PostgreSQL with pgvector extension
-  - 768-dimensional embeddings using Google Gemini
-  - Cosine similarity search for semantic matching
-  - Source file tracking for each document chunk
+- **Vector Search**: Semantic similarity using pgvector cosine distance (70% weight)
+- **Full-Text Search**: Keyword matching using PostgreSQL tsvector with GIN indexing (30% weight)
+- **Combined Scoring**: Normalized weighted combination: `(1 - vector_distance/2) * 0.7 + text_rank * 0.3`
+- **Re-ranking**: Optional Cohere rerank-multilingual-v3.0 for final result optimization
+- **Fallback Strategy**: Automatic fallback to vector-only search when hybrid search yields no results
 
-- **Hybrid Search** ⭐ NEW
-  - **Vector Search**: Semantic similarity using embeddings (70% weight)
-  - **Full-Text Search**: Keyword matching using PostgreSQL tsvector (30% weight)
-  - **Combined Scoring**: Weighted combination for optimal results
-  - **Fallback Strategy**: Automatically falls back to vector-only if hybrid search yields no results
-  - **GIN Index**: Fast full-text search performance
+**Implementation**: `backend/db/db.go::SearchHybridDocuments()`
 
-- **RAG Pipeline**
-  - Query embedding generation
-  - Hybrid search (vector + full-text) for document retrieval
-  - Similarity threshold filtering (0.65) for accuracy
-  - Context-aware response generation with inline citations
-  - Automatic fallback model chain
-  - Streaming response using Server-Sent Events (SSE)
+### Multimodal Ingestion Pipeline
 
-- **Conversation Management**
-  - Full conversation history support
-  - Context preservation across messages
-  - Multi-turn dialog handling
+Hybrid extraction pipeline supporting both native text and scanned documents:
 
-### 🎨 User Interface
+- **Native Text Extraction**: Direct text extraction from PDF/TXT/DOCX using Go libraries
+- **OCR Processing**: Tesseract OCR integration for scanned PDFs with advanced preprocessing:
+  - Matrix scaling (3x) for resolution enhancement (72 DPI → 216 DPI)
+  - Grayscale conversion for noise reduction
+  - Binarization with threshold 150 for text sharpening
+  - PSM 6 configuration for tabular document reading
+  - Multi-language support (English + Indonesian)
+- **Image Analysis**: Gemini Vision API for image description within PDFs
+- **Python Integration**: Subprocess execution of Python scripts for specialized processing
 
-- **Modern Design**
-  - Dark mode optimized UI
-  - Smooth animations and transitions
-  - Responsive layout for all devices
-  - Typing indicators for better UX
+**Implementation**: `backend/scripts/pdf_processor.py`, `backend/utils/document_extractor.go`
 
-- **Interactive Components**
-  - Drag-and-drop file upload (multiple files support)
-  - Real-time chat interface with streaming
-  - Document list with sync and delete functionality
-  - Inline citations with blue styling for visibility
-  - References section showing source files
-  - Message timestamps
+### Code Interpreter (Data Analyst Agent)
 
-### 🔧 Developer Experience
+Dynamic Python code execution system for analytical queries on structured data:
 
-- **Comprehensive Logging**
-  - Step-by-step request tracking
-  - Detailed error messages
-  - Performance monitoring
+- **AI Code Generation**: Natural language to Python code conversion using Gemini 2.0 Flash
+- **Code Sanitization**: Security validation blocking dangerous operations (file I/O, system commands, imports)
+- **Execution Engine**: Sandboxed Python environment with pandas and numpy access
+- **AI Interpretation**: Technical output conversion to natural language for user-friendly responses
+- **File Preview Generation**: Automatic structure analysis (columns, sample data) for context
 
-- **Utility Tools**
-  - Model checker script
-  - Database migration tools
-  - Environment variable management with BOM handling
+**Flow**: Query → Preview → Generate Code → Validate → Execute → Interpret → Stream
 
----
+**Implementation**: `backend/scripts/code_interpreter.py`, `backend/utils/code_runner.go`, `backend/utils/ai.go::GenerateAnalysisCode()`
 
-## 🛠 Tech Stack
+### Intelligent Response System
 
-### Frontend
+Advanced response generation with context awareness:
 
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| **Next.js** | 16.0.5 | React framework with App Router |
-| **React** | 19.2.0 | UI library |
-| **TypeScript** | ^5 | Type-safe JavaScript |
-| **Tailwind CSS** | ^4 | Utility-first CSS framework |
-| **React Markdown** | ^10.1.0 | Markdown rendering for responses |
+- **Streaming Responses**: Server-Sent Events (SSE) for real-time output
+- **Query Rewriting**: Context-aware query expansion using conversation history
+- **Inline Citations**: Source file references integrated into response text
+- **Session Persistence**: Full conversation history with database storage
+- **Model Fallback Chain**: Automatic model switching for high availability
 
-### Backend
+**Implementation**: `backend/utils/chat.go::StreamChatResponse()`, `backend/utils/ai.go::RewriteQuery()`
 
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| **Go** | 1.24.1 | High-performance backend language |
-| **Gin** | 1.9.1 | HTTP web framework |
-| **PostgreSQL** | 16+ | Relational database |
-| **pgvector** | Latest | Vector similarity search extension |
-| **Google Gemini AI** | 2.0 | Embeddings and text generation |
-| **pgx** | v5 | PostgreSQL driver for Go |
+### Resilience Architecture
 
-### AI & ML
+Production-grade reliability mechanisms:
 
-- **Embedding Model**: `text-embedding-004` (768 dimensions)
-- **Generative Model**: `gemini-2.0-flash` with automatic fallback chain
-  - Primary: `gemini-2.0-flash`
-  - Fallbacks: `gemini-2.0-flash-001` → `gemini-flash-latest` → `gemini-2.5-flash`
+- **API Key Rotation**: Automatic key rotation on rate limit errors with multiple key support
+- **Model Fallback Chain**: Sequential model fallback (gemini-2.0-flash → gemini-2.0-flash-001 → gemini-flash-latest → gemini-2.5-flash)
+- **Error Recovery**: Graceful degradation with fallback strategies
+- **Key Management**: Singleton KeyManager with thread-safe rotation
 
-### Infrastructure
-
-- **Document Processing**: `github.com/ledongthuc/pdf` for PDF extraction
-- **Environment**: `godotenv` with BOM handling
-- **CORS**: Enabled for cross-origin requests
+**Implementation**: `backend/utils/key_manager.go`
 
 ---
 
-## 🏗 Architecture
+## System Architecture
 
-### System Architecture
+### Data Flow: Document Upload
+
+```
+User Upload
+    ↓
+File Type Detection (Go)
+    ↓
+┌─────────────────────────────────────┐
+│  Text Documents (PDF/TXT/DOCX)      │
+│  ┌───────────────────────────────┐   │
+│  │ Extract Text (Go/Python)      │   │
+│  │ → OCR if needed (Tesseract)  │   │
+│  │ → Image Description (Gemini)  │   │
+│  └───────────────────────────────┘   │
+│           ↓                           │
+│  Split into Chunks (1000 chars)      │
+│  Overlap: 200 chars                  │
+│           ↓                           │
+│  Generate Embeddings (Gemini)        │
+│  768-dimensional vectors              │
+│           ↓                           │
+│  Store in PostgreSQL + pgvector      │
+└─────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────┐
+│  Structured Data (CSV/Excel)         │
+│  ┌───────────────────────────────┐   │
+│  │ Process with Pandas (Python)  │   │
+│  │ → Generate Preview            │   │
+│  │ → Store metadata              │   │
+│  └───────────────────────────────┘   │
+│  (No embedding, processed on-demand) │
+└─────────────────────────────────────┘
+```
+
+### Data Flow: Chat Query Processing
+
+#### RAG Flow (Text Documents)
+
+```
+User Query
+    ↓
+Query Rewriting (if history exists)
+    ↓
+Generate Query Embedding (Gemini text-embedding-004)
+    ↓
+Hybrid Search
+    ├─ Vector Search (pgvector cosine distance)
+    └─ Full-Text Search (PostgreSQL tsvector)
+    ↓
+Combined Scoring & Ranking
+    ↓
+Similarity Threshold Filter (0.65)
+    ↓
+Optional: Cohere Re-ranking (top 5)
+    ↓
+Build Context from Top-K Chunks
+    ↓
+Generate Response (Gemini 2.0 Flash, streaming)
+    ↓
+Stream to Frontend (SSE)
+```
+
+#### Data Analyst Flow (CSV/Excel)
+
+```
+User Query + CSV/Excel File
+    ↓
+Generate File Preview (columns + sample data)
+    ↓
+AI Code Generation (Gemini 2.0 Flash)
+    ↓
+Code Validation (security check)
+    ↓
+Execute Python Code (pandas/numpy)
+    ↓
+Get Python Output
+    ↓
+AI Interpretation (convert technical → natural language)
+    ↓
+Stream Interpreted Response (SSE)
+```
+
+### Component Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        Frontend (Next.js)                    │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │   Chat UI    │  │ File Upload  │  │   Sidebar    │     │
-│  └──────┬───────┘  └──────┬───────┘  └──────────────┘     │
-└─────────┼──────────────────┼──────────────────────────────┘
+│                    Frontend Layer                          │
+│  Next.js 16 (App Router) + React 19 + TypeScript          │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
+│  │  Chat UI     │  │ Upload UI    │  │  Sidebar     │    │
+│  │  (SSE Client)│  │ (Attachment) │  │ (Sessions)   │    │
+│  └──────┬───────┘  └──────┬───────┘  └──────────────┘    │
+└─────────┼──────────────────┼───────────────────────────────┘
           │                  │
-          │ HTTP/REST API    │
+          │ HTTP/REST + SSE  │
           │                  │
-┌─────────┼──────────────────┼──────────────────────────────┐
-│         ▼                  ▼                               │
-│                  Backend (Go/Gin)                          │
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │  API Handlers                                       │  │
-│  │  - /api/chat                                        │  │
-│  │  - /api/upload                                      │  │
-│  └──────┬──────────────────────┬──────────────────────┘  │
-│         │                      │                          │
-│  ┌──────▼──────────┐  ┌────────▼─────────────┐          │
-│  │  RAG Pipeline   │  │  Document Processor  │          │
-│  │  1. Embed Query │  │  1. Extract Text     │          │
-│  │  2. Vector Search│  │  2. Split Chunks    │          │
-│  │  3. Generate    │  │  3. Generate Embed   │          │
-│  │     Response    │  │  4. Store in DB      │          │
-│  └──────┬──────────┘  └────────┬─────────────┘          │
-│         │                      │                          │
-└─────────┼──────────────────────┼──────────────────────────┘
-          │                      │
-          │                      │
-┌─────────▼──────────────────────▼──────────────────────────┐
-│              External Services                             │
-│  ┌──────────────┐              ┌──────────────┐          │
-│  │ Google Gemini│              │  PostgreSQL  │          │
-│  │ - Embeddings │              │  + pgvector  │          │
-│  │ - Chat       │              │              │          │
-│  └──────────────┘              └──────────────┘          │
+┌─────────▼──────────────────▼───────────────────────────────┐
+│                  Backend Layer (Go/Gin)                    │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  Request Handlers                                   │   │
+│  │  - ChatHandler (RAG + Data Analyst routing)         │   │
+│  │  - UploadHandler (multimodal processing)            │   │
+│  │  - DocumentHandler (CRUD operations)                │   │
+│  │  - SessionHandler (conversation persistence)        │   │
+│  └──────┬──────────────────────────────────────────────┘   │
+│         │                                                   │
+│  ┌──────▼──────────────────────────────────────────────┐   │
+│  │  Business Logic Layer                               │   │
+│  │  ┌──────────────┐  ┌──────────────┐               │   │
+│  │  │  AI Utils     │  │  Document    │               │   │
+│  │  │  - Embeddings │  │  Processor   │               │   │
+│  │  │  - Generation │  │  - Extract   │               │   │
+│  │  │  - Code Gen   │  │  - Chunk     │               │   │
+│  │  │  - Rewrite    │  │  - Preview   │               │   │
+│  │  └──────────────┘  └───────────────┘               │   │
+│  │  ┌──────────────┐  ┌──────────────┐               │   │
+│  │  │  Code Runner │  │  Key Manager │               │   │
+│  │  │  - Execute   │  │  - Rotation  │               │   │
+│  │  │  - Validate  │  │  - Fallback  │               │   │
+│  │  └──────────────┘  └──────────────┘               │   │
+│  └──────┬──────────────────────────────────────────────┘   │
+│         │                                                   │
+│  ┌──────▼──────────────────────────────────────────────┐   │
+│  │  Data Access Layer                                  │   │
+│  │  - Hybrid Search (vector + full-text)               │   │
+│  │  - Vector Storage (pgvector)                        │   │
+│  │  - Session Management                               │   │
+│  └──────┬──────────────────────────────────────────────┘   │
+└─────────┼───────────────────────────────────────────────────┘
+          │
+          │
+┌─────────▼───────────────────────────────────────────────────┐
+│              External Services & Infrastructure              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
+│  │ Google Gemini│  │  PostgreSQL  │  │   Python     │    │
+│  │ - Embeddings │  │  + pgvector  │  │ - Tesseract  │    │
+│  │ - Generation │  │  - GIN Index │  │ - Pandas     │    │
+│  │ - Vision     │  │  - tsvector  │  │ - PyMuPDF    │    │
+│  └──────────────┘  └──────────────┘  └──────────────┘    │
+│                                                           │
+│  ┌──────────────┐                                        │
+│  │   Cohere     │                                        │
+│  │   Reranking  │                                        │
+│  └──────────────┘                                        │
 └───────────────────────────────────────────────────────────┘
 ```
 
-### RAG Pipeline Flow
+---
 
-1. **Document Upload**
-   ```
-   PDF/TXT → Extract Text → Split into Chunks → Generate Embeddings → Store in DB
-   ```
+## Technology Stack
 
-2. **Query Processing**
-   ```
-   User Question → Generate Query Embedding → Hybrid Search (Vector + Full-Text) → 
-   Apply Similarity Threshold (0.65) → Retrieve Top-K Chunks → Build Context → 
-   Generate Response with Gemini (Streaming) → Return Answer with Inline Citations
-   ```
+### Backend
 
-3. **Conversation Context**
-   ```
-   Current Question + History + Retrieved Documents → Contextual Prompt → 
-   Gemini Response → Update History
-   ```
+| Component | Technology | Version | Purpose |
+|-----------|-----------|---------|---------|
+| Language | Go | 1.24.1 | High-performance backend |
+| Framework | Gin | 1.9.1 | HTTP web framework |
+| Database | PostgreSQL | 16+ | Primary data store |
+| Vector Extension | pgvector | Latest | Vector similarity search |
+| Database Driver | pgx | v5.7.2 | PostgreSQL driver |
+| AI SDK | google-generative-ai-go | v0.20.1 | Gemini API client |
+| Environment | godotenv | v1.5.1 | Environment variable management |
+
+### Frontend
+
+| Component | Technology | Version | Purpose |
+|-----------|-----------|---------|---------|
+| Framework | Next.js | 16.0.5 | React framework with App Router |
+| UI Library | React | 19.2.0 | Component library |
+| Language | TypeScript | ^5 | Type safety |
+| Styling | Tailwind CSS | ^4 | Utility-first CSS |
+| Animations | Framer Motion | ^12.23.24 | Motion library |
+| Markdown | react-markdown | ^10.1.0 | Markdown rendering |
+
+### Python Scripts
+
+| Library | Purpose |
+|---------|---------|
+| PyMuPDF (fitz) | PDF manipulation and rendering |
+| pytesseract | OCR engine wrapper |
+| Pillow (PIL) | Image processing (grayscale, binarization) |
+| pandas | Data analysis and manipulation |
+| openpyxl | Excel file reading |
+| google-generativeai | Gemini Vision API for image description |
+
+### AI Services
+
+| Service | Model/Endpoint | Purpose |
+|---------|---------------|---------|
+| Google Gemini | text-embedding-004 | 768-dimensional embeddings |
+| Google Gemini | gemini-2.0-flash | Text generation (primary) |
+| Google Gemini | gemini-2.0-flash-001 | Text generation (fallback 1) |
+| Google Gemini | gemini-flash-latest | Text generation (fallback 2) |
+| Google Gemini | gemini-2.5-flash | Text generation (fallback 3) |
+| Google Gemini | gemini-pro-vision | Image description |
+| Cohere | rerank-multilingual-v3.0 | Document reranking |
+
+### Infrastructure Tools
+
+| Tool | Purpose |
+|------|---------|
+| Tesseract OCR | OCR engine for scanned documents |
+| Docker | PostgreSQL containerization (optional) |
 
 ---
 
-## 📦 Prerequisites
+## Prerequisites
 
-Before you begin, ensure you have the following installed:
+### Required Software
 
 - **Node.js** 18+ and npm
 - **Go** 1.24+ ([Download](https://go.dev/dl/))
-- **PostgreSQL** 16+ with pgvector extension ([Installation Guide](https://github.com/pgvector/pgvector))
+- **PostgreSQL** 16+ with pgvector extension
+- **Python** 3.11+ with pip
+- **Tesseract OCR** (for OCR functionality)
+
+### Required API Keys
+
 - **Google Gemini API Key** ([Get one here](https://makersuite.google.com/app/apikey))
+- **Cohere API Key** (optional, for reranking)
 
 ### PostgreSQL Setup
 
-You can use either:
-- **Local PostgreSQL** with pgvector extension
-- **Docker** (recommended for quick setup):
-  ```bash
-  docker run -d \
-    --name rag-chatbot-postgres \
-    -p 5433:5432 \
-    -e POSTGRES_USER=postgres \
-    -e POSTGRES_PASSWORD=your_password \
-    -e POSTGRES_DB=rag_chatbot \
-    pgvector/pgvector:pg16
-  ```
+#### Option 1: Docker (Recommended)
+
+```bash
+docker run -d \
+  --name rag-chatbot-postgres \
+  -p 5433:5432 \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=your_password \
+  -e POSTGRES_DB=rag_chatbot \
+  pgvector/pgvector:pg16
+```
+
+#### Option 2: Local Installation
+
+1. Install PostgreSQL 16+
+2. Install pgvector extension:
+   ```sql
+   CREATE EXTENSION vector;
+   ```
+
+### Tesseract OCR Setup (Windows)
+
+1. Download Tesseract installer from [GitHub](https://github.com/UB-Mannheim/tesseract/wiki)
+2. Install to default location: `C:\Program Files\Tesseract-OCR\`
+3. Download language data (eng + ind) from [tessdata](https://github.com/tesseract-ocr/tessdata)
+4. Place `.traineddata` files in: `C:\Program Files\Tesseract-OCR\tessdata\`
+
+**Note**: The system auto-detects Tesseract from common installation paths.
 
 ---
 
-## 🚀 Installation
+## Installation & Setup
 
-### 1. Clone the Repository
+### 1. Clone Repository
 
 ```bash
 git clone <your-repo-url>
 cd ai-rag-chatbot/my-app
 ```
 
-### 2. Frontend Setup
-
-```bash
-# Install dependencies
-npm install
-
-# The frontend is ready! (No build step needed for dev)
-```
-
-### 3. Backend Setup
+### 2. Backend Setup
 
 ```bash
 cd backend
@@ -275,86 +374,127 @@ cd backend
 # Install Go dependencies
 go mod download
 
-# Build the application
+# Build application
 go build -o backend.exe main.go
 ```
 
-### 4. Environment Configuration
+### 3. Frontend Setup
 
-Create a `.env` file in the `backend/` directory:
+```bash
+# From project root
+npm install
+```
+
+### 4. Python Dependencies
+
+```bash
+# Install required Python packages
+pip install pandas openpyxl pymupdf pytesseract pillow google-generativeai
+```
+
+### 5. Environment Configuration
+
+Create `.env` file in `backend/` directory:
 
 ```env
 # Database Configuration
 DATABASE_URL=postgresql://postgres:your_password@localhost:5433/rag_chatbot
 
 # Google Gemini API
+# Option 1: Single key
 GEMINI_API_KEY=your_gemini_api_key_here
+
+# Option 2: Multiple keys (comma-separated) for rotation
+GEMINI_API_KEYS=key1,key2,key3
+
+# Optional: Cohere API (for reranking)
+COHERE_API_KEY=your_cohere_api_key_here
+# OR multiple keys
+COHERE_API_KEYS=key1,key2
 
 # Server Configuration
 PORT=5000
 ```
 
-### 5. Database Setup
+### 6. Database Initialization
 
 ```bash
 cd backend
 
-# Create the database (if using local PostgreSQL)
+# Create database (if using local PostgreSQL)
 go run cmd/create-db/main.go
 
 # Run migrations
 go run cmd/migrate/main.go
-
-# Run Hybrid Search migration (if not included in main migration)
-# Execute migration_add_text_search_simple.sql in pgAdmin or psql
 ```
+
+The migration will create:
+- `documents` table with pgvector support
+- `text_search` column with GIN index for full-text search
+- `chat_sessions` and `chat_messages` tables for conversation persistence
+
+### 7. Verify Installation
+
+```bash
+# Check available Gemini models
+cd backend
+go run cmd/check-models/main.go
+```
+
+### 8. Start Services
+
+#### Backend Server
+
+```bash
+cd backend
+go run main.go
+# Or: ./backend.exe
+```
+
+Server runs on `http://localhost:5000`
+
+#### Frontend Development Server
+
+```bash
+# From project root
+npm run dev
+```
+
+Frontend runs on `http://localhost:3000`
 
 ---
 
-## ⚙️ Configuration
-
-### Environment Variables
-
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | ✅ Yes | - |
-| `GEMINI_API_KEY` | Google Gemini API key | ✅ Yes | - |
-| `PORT` | Backend server port | ❌ No | `5000` |
-
-### Chunking Configuration
-
-Default chunking parameters (in `handlers/upload.go`):
-- **Chunk Size**: 1000 characters
-- **Overlap**: 200 characters
-
-To modify, update the `SplitText` call:
-```go
-chunks := utils.SplitText(text, 1000, 200) // (text, chunkSize, overlap)
-```
+## Configuration
 
 ### Hybrid Search Configuration
 
-Hybrid Search combines vector similarity and full-text search. Configuration in `backend/handlers/chat.go`:
+Hybrid search weights are configurable in `backend/handlers/chat.go`:
 
 ```go
-vectorWeight := 0.7 // 70% vector, 30% text
-similarityThreshold := 0.65 // Cosine distance threshold
+vectorWeight := 0.7  // 70% vector, 30% text
+similarityThreshold := 0.65  // Cosine distance threshold
 ```
 
-To modify weights, change `vectorWeight` (0.0 to 1.0). Higher values favor semantic similarity, lower values favor keyword matching.
+**Adjustment Guidelines**:
+- Higher `vectorWeight` (0.8-0.9): Better for semantic queries, synonyms
+- Lower `vectorWeight` (0.3-0.5): Better for exact keyword matching
+- Lower `similarityThreshold` (0.5): More strict, fewer results
+- Higher `similarityThreshold` (0.7): More lenient, more results
 
-### Similarity Threshold
+### Chunking Parameters
 
-The similarity threshold filters out irrelevant documents. Current setting: **0.65**
+Default chunking in `backend/utils/document_extractor.go`:
 
-- Lower threshold (e.g., 0.5): More strict, only very similar documents
-- Higher threshold (e.g., 0.7): More lenient, includes more documents
+```go
+chunkSize := 1000  // characters per chunk
+overlap := 200     // characters overlap between chunks
+```
 
-To modify, update `similarityThreshold` in `backend/handlers/chat.go`.
+Modify in `backend/utils/document_processor.go::ProcessAndSaveDocument()`.
 
-### Model Configuration
+### Model Fallback Chain
 
-The chatbot uses a fallback chain for reliability. To modify models, edit `backend/utils/chat.go`:
+Configure in `backend/utils/chat.go`:
 
 ```go
 modelsToTry := []string{
@@ -365,53 +505,24 @@ modelsToTry := []string{
 }
 ```
 
----
+### OCR Configuration
 
-## 🎮 Usage
+OCR settings in `backend/scripts/pdf_processor.py`:
 
-### Starting the Application
-
-#### 1. Start the Backend
-
-```bash
-cd backend
-go run main.go
-
-# Or using the compiled binary
-./backend.exe
+```python
+matrix = fitz.Matrix(3, 3)  # Resolution scaling (3x)
+threshold = 150  # Binarization threshold
+custom_config = r'--oem 3 --psm 6'  # Tesseract PSM mode
 ```
 
-The backend will start on `http://localhost:5000`
-
-#### 2. Start the Frontend
-
-```bash
-# From the root directory
-npm run dev
-```
-
-The frontend will be available at `http://localhost:3000`
-
-### Using the Chatbot
-
-1. **Upload a Document**
-   - Click the upload area or drag-and-drop a PDF/TXT file
-   - Wait for the document to be processed (extracted, chunked, and indexed)
-
-2. **Start Chatting**
-   - Type your question in the chat input
-   - The AI uses **Hybrid Search** (vector + full-text) to find relevant documents
-   - Answers stream in real-time with inline citations (blue text)
-   - Continue the conversation - context is preserved across messages
-
-3. **Manage Documents**
-   - View all uploaded documents in the document list
-   - Delete documents you no longer need
-   - Sync database with physical files to remove orphaned entries
+**PSM Modes**:
+- PSM 6: Single uniform block (good for tables/receipts)
+- PSM 3: Fully automatic (default)
+- PSM 1: Automatic with OSD
 
 ---
 
-## 📚 API Documentation
+## API Documentation
 
 ### Base URL
 
@@ -421,7 +532,7 @@ http://localhost:5000
 
 ### Endpoints
 
-#### 1. Health Check
+#### Health Check
 
 ```http
 GET /ping
@@ -436,7 +547,7 @@ GET /ping
 
 ---
 
-#### 2. Upload Document
+#### Upload Document
 
 ```http
 POST /api/upload
@@ -444,31 +555,30 @@ Content-Type: multipart/form-data
 ```
 
 **Request:**
-- Form field: `document` (file: PDF or TXT)
+- Form field: `document` (file: PDF, TXT, DOCX, CSV, XLSX, XLS)
 
 **Response:**
 ```json
 {
-  "fileName": "example.pdf",
-  "filePath": "uploads/example-1234567890.pdf",
+  "fileName": "document.pdf",
+  "filePath": "uploads/document-1234567890.pdf",
   "text": "Extracted text content...",
-  "message": "File berhasil diupload, divektorisasi, dan disimpan ke database (5 chunks)",
+  "message": "File berhasil diupload, divektorisasi, dan disimpan ke database (15 chunks)",
   "previewText": "First 200 characters...",
-  "chunksCount": 5,
-  "totalChunks": 5
+  "chunksCount": 15
 }
 ```
 
 **Error Response:**
 ```json
 {
-  "error": "Only PDF and TXT files are allowed"
+  "error": "Only PDF, TXT, DOCX, CSV, and Excel (.xlsx, .xls) files are allowed"
 }
 ```
 
 ---
 
-#### 3. Chat (Streaming)
+#### Chat (Streaming)
 
 ```http
 POST /api/chat
@@ -478,7 +588,7 @@ Content-Type: application/json
 **Request:**
 ```json
 {
-  "question": "What is the main topic of the document?",
+  "question": "What is the main topic?",
   "history": [
     {
       "role": "user",
@@ -488,50 +598,77 @@ Content-Type: application/json
       "role": "model",
       "content": "Previous answer"
     }
-  ]
+  ],
+  "selectedFiles": ["document1.pdf"],
+  "sessionId": 123
 }
 ```
 
 **Response:** Server-Sent Events (SSE) stream
 
-**Event Types:**
-- `metadata`: Source files information
-  ```json
-  {
-    "type": "metadata",
-    "sources": ["document1.pdf", "document2.txt"],
-    "sourceIds": [1, 2, 3]
-  }
-  ```
-- `chunk`: Text chunks (streaming)
-  ```json
-  {
-    "type": "chunk",
-    "chunk": "Based on the uploaded documents..."
-  }
-  ```
-- `done`: Completion event
-  ```json
-  {
-    "type": "done",
-    "totalChunks": 15,
-    "fullLength": 1234
-  }
-  ```
-- `error`: Error event
-  ```json
-  {
-    "type": "error",
-    "error": "Failed to generate query embedding",
-    "message": "Detailed error message"
-  }
-  ```
+**Event: `metadata`**
+```json
+{
+  "type": "metadata",
+  "sources": ["document1.pdf"],
+  "sourceIds": [1, 2, 3],
+  "sessionId": 123,
+  "analysis": false,
+  "code": null
+}
+```
 
-**Note:** The chat endpoint uses Hybrid Search by default, combining vector similarity (70%) and full-text search (30%). If hybrid search yields no results, it automatically falls back to vector-only search.
+**Event: `chunk`** (streaming)
+```json
+{
+  "type": "chunk",
+  "chunk": "Based on the uploaded documents..."
+}
+```
+
+**Event: `done`**
+```json
+{
+  "type": "done",
+  "totalChunks": 15,
+  "fullLength": 1234,
+  "sessionId": 123
+}
+```
+
+**Event: `error`**
+```json
+{
+  "type": "error",
+  "error": "Failed to generate query embedding",
+  "message": "Detailed error message"
+}
+```
+
+**Note**: The endpoint automatically routes to RAG flow (PDF/TXT/DOCX) or Data Analyst flow (CSV/Excel) based on file type detection.
 
 ---
 
-#### 4. Get Documents
+#### Get Question Suggestions
+
+```http
+GET /api/chat/suggestions
+```
+
+**Response:**
+```json
+{
+  "questions": [
+    "What is the main topic?",
+    "Summarize the key points",
+    "What are the requirements?"
+  ]
+}
+```
+
+---
+
+#### Get Documents
 
 ```http
 GET /api/documents
@@ -540,14 +677,14 @@ GET /api/documents
 **Response:**
 ```json
 {
-  "documents": ["document1.pdf", "document2.txt"],
+  "documents": ["document1.pdf", "document2.csv"],
   "count": 2
 }
 ```
 
 ---
 
-#### 5. Delete Document
+#### Delete Document
 
 ```http
 DELETE /api/documents/:filename
@@ -557,13 +694,13 @@ DELETE /api/documents/:filename
 ```json
 {
   "message": "Document deleted successfully",
-  "deletedChunks": 5
+  "deletedChunks": 15
 }
 ```
 
 ---
 
-#### 6. Sync Documents
+#### Sync Documents
 
 ```http
 POST /api/documents/sync
@@ -578,66 +715,132 @@ POST /api/documents/sync
 }
 ```
 
-**Note:** Syncs database with physical files in `uploads/` directory. Removes orphaned database entries and imports new files.
+**Note**: Syncs database with physical files in `uploads/` directory. Removes orphaned entries and imports new files.
 
 ---
 
-## 📁 Project Structure
+#### Get File
+
+```http
+GET /api/files/:filename
+```
+
+Serves file from `uploads/` directory with pattern matching for timestamped filenames.
+
+---
+
+#### Session Management
+
+**Create Session:**
+```http
+POST /api/sessions
+Content-Type: application/json
+
+{
+  "title": "Chat about sales data"
+}
+```
+
+**Get All Sessions:**
+```http
+GET /api/sessions
+```
+
+**Get Session Messages:**
+```http
+GET /api/sessions/:id
+```
+
+**Delete Session:**
+```http
+DELETE /api/sessions/:id
+```
+
+---
+
+## Project Structure
 
 ```
 ai-rag-chatbot/
-├── app/                        # Next.js App Router
-│   ├── layout.tsx             # Root layout
-│   ├── page.tsx               # Main chat page
-│   └── globals.css            # Global styles
+├── app/                          # Next.js App Router
+│   ├── layout.tsx               # Root layout
+│   ├── page.tsx                 # Main chat page
+│   └── globals.css              # Global styles
 │
-├── backend/                    # Go backend
-│   ├── cmd/                   # CLI tools
-│   │   ├── check-models/      # Model checker utility
-│   │   ├── create-db/         # Database creation
-│   │   └── migrate/           # Migration runner
+├── backend/                      # Go backend
+│   ├── cmd/                     # CLI utilities
+│   │   ├── check-models/        # Model availability checker
+│   │   ├── create-db/           # Database creation
+│   │   ├── migrate/             # Migration runner
+│   │   ├── test-analysis-code-gen/  # Test AI code generation
+│   │   └── test-code-runner/    # Test code execution
 │   │
-│   ├── db/                    # Database layer
-│   │   ├── db.go              # Connection & queries
-│   │   └── migration.sql      # Schema definition
+│   ├── db/                      # Database layer
+│   │   ├── db.go                # Connection pool & queries
+│   │   ├── chat_store.go        # Session & message storage
+│   │   └── migration*.sql       # Schema migrations
 │   │
-│   ├── handlers/              # HTTP handlers
-│   │   ├── chat.go            # Chat endpoint
-│   │   └── upload.go          # Upload endpoint
+│   ├── handlers/                # HTTP handlers
+│   │   ├── chat.go              # Chat endpoint (RAG + Data Analyst)
+│   │   ├── upload.go            # File upload handler
+│   │   ├── document.go          # Document management
+│   │   ├── session.go           # Session management
+│   │   └── suggestion.go        # Question suggestions
 │   │
-│   ├── models/                # Data models
-│   │   └── chat.go            # Chat message struct
+│   ├── models/                  # Data models
+│   │   ├── chat.go              # Chat message struct
+│   │   └── session.go           # Session struct
 │   │
-│   ├── routes/                # Route definitions
-│   │   └── routes.go          # Route registration
+│   ├── routes/                  # Route definitions
+│   │   └── routes.go           # Route registration
 │   │
-│   ├── utils/                 # Utility functions
-│   │   ├── ai.go              # Gemini API client
-│   │   ├── chat.go            # Chat generation logic
-│   │   ├── document_extractor.go  # PDF/TXT extraction
-│   │   └── env.go             # Environment handling
+│   ├── scripts/                 # Python scripts
+│   │   ├── pdf_processor.py     # PDF + OCR processing
+│   │   ├── data_processor.py    # CSV/Excel to narrative
+│   │   └── code_interpreter.py  # Python code execution
 │   │
-│   ├── main.go                # Application entry point
-│   ├── go.mod                 # Go dependencies
-│   └── scripts.ps1            # Development scripts
+│   ├── utils/                   # Utility functions
+│   │   ├── ai.go                # Gemini API (embeddings, chat, code gen)
+│   │   ├── chat.go              # Chat generation & streaming
+│   │   ├── code_runner.go       # Python execution wrapper
+│   │   ├── data_preview.go      # File preview generator
+│   │   ├── document_extractor.go # File extraction
+│   │   ├── document_processor.go # Document processing pipeline
+│   │   ├── file_helper.go       # File path resolution
+│   │   ├── key_manager.go       # API key rotation
+│   │   └── reranker.go          # Cohere reranking
+│   │
+│   └── main.go                  # Application entry point
 │
-├── components/                 # React components
-│   ├── chat/                  # Chat components
-│   ├── layout/                # Layout components
-│   ├── ui/                    # UI primitives
-│   └── upload/                # Upload components
+├── components/                   # React components
+│   ├── chat/                    # Chat components
+│   │   ├── ChatBubble.tsx       # Message bubble
+│   │   ├── ChatContainer.tsx    # Chat container
+│   │   ├── ChatInput.tsx        # Input with attachment upload
+│   │   └── TypingIndicator.tsx  # Loading indicator
+│   │
+│   ├── layout/                  # Layout components
+│   │   └── Sidebar.tsx          # Session sidebar
+│   │
+│   ├── upload/                  # Upload components
+│   │   ├── UploadCard.tsx       # Upload interface
+│   │   └── DocumentList.tsx     # Document list
+│   │
+│   └── ui/                      # UI primitives
+│       ├── PDFViewerPanel.tsx  # PDF viewer
+│       └── ConfirmDialog.tsx   # Confirmation dialog
 │
-├── public/                     # Static assets
-├── package.json               # Frontend dependencies
-├── tailwind.config.js         # Tailwind configuration
-└── README.md                  # This file
+├── public/                       # Static assets
+├── package.json                  # Frontend dependencies
+├── tailwind.config.js           # Tailwind configuration
+└── README.md                     # This file
 ```
 
 ---
 
-## 🔨 Development
+## Development
 
-### Running in Development Mode
+### Running in Development
 
 #### Backend
 
@@ -654,161 +857,122 @@ npm run dev
 
 ### Utility Commands
 
-#### Check Available Gemini Models
+#### Check Gemini Models
 
 ```bash
 cd backend
 go run cmd/check-models/main.go
 ```
 
-This will list all available models for your API key and show recommendations.
-
 #### Database Operations
 
 ```bash
-# Create database
 cd backend
+
+# Create database
 go run cmd/create-db/main.go
 
 # Run migrations
 go run cmd/migrate/main.go
 ```
 
+#### Test Data Analyst Agent
+
+```bash
+cd backend
+go run cmd/test-analysis-code-gen/main.go
+```
+
 ### Code Style
 
-- **Go**: Follow standard Go conventions, use `gofmt`
+- **Go**: Standard Go conventions, use `gofmt`
 - **TypeScript/React**: ESLint configuration included
-- **Formatting**: Prettier recommended for frontend
+- **Python**: PEP 8 style guide
 
 ### Adding New Features
 
 1. **New API Endpoint**: Add handler in `handlers/`, register in `routes/routes.go`
 2. **New UI Component**: Add to `components/` directory
-3. **Database Changes**: Create new migration file in `db/`
+3. **Database Changes**: Create migration file in `db/`
+4. **Python Script**: Add to `scripts/` with proper error handling
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
-### Common Issues
-
-#### 1. Database Connection Failed
+### Database Connection Failed
 
 **Error**: `connection timeout expired`
 
-**Solution**:
-- Verify PostgreSQL is running: `docker ps` or check service status
+**Solutions**:
+- Verify PostgreSQL is running: `docker ps` or service status
 - Check `DATABASE_URL` in `.env` file
-- Ensure pgvector extension is installed: `CREATE EXTENSION vector;`
+- Ensure pgvector extension: `CREATE EXTENSION vector;`
+- Verify port (default: 5433 for Docker, 5432 for local)
 
-#### 2. Hybrid Search Returns No Results
+### Hybrid Search Returns No Results
 
-**Issue**: Hybrid search yields 0 results even though documents exist
+**Issue**: Hybrid search yields 0 results
 
-**Solution**:
-- The system automatically falls back to vector-only search
-- Check logs for: `"WARNING - Hybrid search yielded 0 results, falling back to vector-only search"`
-- If still no results, try:
-  - Adjust similarity threshold (currently 0.65)
-  - Check if documents are properly indexed (text_search column populated)
-  - Verify GIN index exists: `\d documents` in psql
+**Solutions**:
+- System automatically falls back to vector-only search
+- Check logs for fallback messages
+- Verify GIN index exists: `\d documents` in psql
+- Check if `text_search` column is populated
+- Adjust similarity threshold if needed
 
-#### 3. Model Not Found (404)
+### Tesseract OCR Not Found
 
-**Error**: `models/gemini-1.5-flash is not found`
+**Error**: `Tesseract OCR tidak ditemukan`
 
-**Solution**:
+**Solutions**:
+- Install Tesseract from [GitHub](https://github.com/UB-Mannheim/tesseract/wiki)
+- Verify installation path matches auto-detection
+- Add Tesseract to PATH environment variable
+- Download language data (eng + ind)
+
+### Python Code Execution Fails
+
+**Error**: `failed to execute Python code`
+
+**Solutions**:
+- Verify Python is installed: `python --version`
+- Install required packages: `pip install pandas openpyxl`
+- Check file path is correct
+- Review code validation errors in logs
+
+### API Key Issues
+
+**Error**: `Invalid API key` or `rate limit`
+
+**Solutions**:
+- Verify API key in `.env` file
+- Use `GEMINI_API_KEYS` for multiple keys (comma-separated)
+- System automatically rotates keys on rate limit
+- Check API key quota in Google Cloud Console
+
+### Model Not Found
+
+**Error**: `models/gemini-2.0-flash is not found`
+
+**Solutions**:
 - Run model checker: `go run cmd/check-models/main.go`
-- Update model name in `utils/chat.go` to a valid model
-- The fallback chain will automatically try alternative models
-
-#### 4. Environment Variables Not Loading
-
-**Error**: `DATABASE_URL is not set`
-
-**Solution**:
-- Ensure `.env` file exists in `backend/` directory
-- Check for BOM (Byte Order Mark) in `.env` file - the app handles this automatically
-- Verify file format: `KEY=value` (no quotes needed)
-
-#### 5. PDF Extraction Fails
-
-**Error**: `failed to extract text from PDF`
-
-**Solution**:
-- Ensure PDF is not password-protected
-- Check if PDF contains text (not just images)
-- Verify file is valid PDF format
-- Check logs for detailed error messages
-
-#### 6. Port Already in Use
-
-**Error**: `bind: address already in use`
-
-**Solution**:
-- Find process using port: `netstat -ano | findstr :5000` (Windows)
-- Kill process or change PORT in `.env`
-
-### Debug Mode
-
-Enable detailed logging by checking the console output. The backend logs every step of the RAG pipeline:
-
-```
-[Chat] Step 1: Request diterima
-[Chat] Step 2: Generating embedding...
-[Chat] Step 3: Mencari dokumen di DB menggunakan Hybrid Search...
-[Chat] Step 3: Hybrid Search menemukan: 3 dokumen
-[Chat] Step 4: Candidate 1 - SourceFile: document.pdf | Distance: 0.6123
-[Chat] Step 4: Total context docs: 3, Unique source files: 2, Filtered out: 0
-[Chat] Step 6: Starting streaming response...
-```
+- Update model name in `utils/chat.go` to available model
+- Fallback chain will try alternative models automatically
 
 ---
 
-## 🤝 Contributing
+## License
 
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Development Guidelines
-
-- Write clear commit messages following [Conventional Commits](https://www.conventionalcommits.org/)
-- Add tests for new features
-- Update documentation as needed
-- Ensure code passes linting/formatting checks
+[Your License Here]
 
 ---
 
-## 📝 License
+## Acknowledgments
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- [Google Gemini AI](https://ai.google.dev/) for powerful language models
-- [pgvector](https://github.com/pgvector/pgvector) for vector similarity search
-- [Next.js](https://nextjs.org/) and [React](https://react.dev/) teams for amazing frameworks
-- [Gin](https://gin-gonic.com/) for the elegant Go web framework
-
----
-
-## 📞 Support
-
-For questions, issues, or feature requests, please open an issue on GitHub.
-
----
-
-<div align="center">
-
-**Built with ❤️ using Next.js, Go, and Google Gemini AI**
-
-⭐ Star this repo if you find it helpful!
-
-</div>
+- Google Gemini AI for embeddings and generation models
+- pgvector for PostgreSQL vector similarity search
+- Cohere for document reranking
+- Tesseract OCR for document scanning support
+- Next.js and React teams for frontend frameworks
+- Gin framework for Go web development
