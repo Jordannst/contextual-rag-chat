@@ -362,7 +362,7 @@ docker run -d \
 ### 1. Clone Repository
 
 ```bash
-git clone <your-repo-url>
+git clone <https://github.com/Jordannst/contextual-rag-chat.git>
 cd ai-rag-chatbot/my-app
 ```
 
