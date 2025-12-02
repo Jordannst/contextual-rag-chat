@@ -43,6 +43,66 @@ func ChatHandler(c *gin.Context) {
 	}
 	log.Printf("[Chat] Step 1: Request diterima - Question: %s, History length: %d\n", req.Question, len(req.History))
 
+	// Step 1.1: Detect file type and decide on flow (RAG vs Data Analyst)
+	fileFilters := req.SelectedFiles
+	var isDataAnalysisFlow bool
+	var dataFilePaths map[string]string
+	
+	if len(fileFilters) > 0 {
+		log.Printf("[Chat] Step 1.1: Detecting file types from selected files: %v\n", fileFilters)
+		
+		// Check if all selected files are data files (CSV/Excel)
+		allDataFiles := true
+		hasTextDocs := false
+		
+		for _, fileName := range fileFilters {
+			if utils.IsDataFile(fileName) {
+				// This is a data file
+			} else if utils.IsTextDocument(fileName) {
+				hasTextDocs = true
+				allDataFiles = false
+			} else {
+				// Unknown file type, default to RAG
+				allDataFiles = false
+			}
+		}
+		
+		// Decision: If ALL files are data files AND no text docs, use Data Analyst flow
+		// Otherwise, use RAG flow (safer default)
+		if allDataFiles && !hasTextDocs && len(fileFilters) > 0 {
+			isDataAnalysisFlow = true
+			log.Printf("[Chat] Step 1.1: ✅ All selected files are data files (CSV/Excel) - Using Data Analyst flow\n")
+			
+			// Get file paths for data files
+			var err error
+			dataFilePaths, err = utils.GetFilePathFromSourceFiles(fileFilters)
+			if err != nil {
+				log.Printf("[Chat] WARNING: Failed to get some file paths: %v\n", err)
+			}
+			
+			// Check if we have at least one valid file path
+			if len(dataFilePaths) == 0 {
+				log.Printf("[Chat] WARNING: No valid file paths found, falling back to RAG flow\n")
+				isDataAnalysisFlow = false
+			}
+		} else {
+			log.Printf("[Chat] Step 1.1: Using RAG flow (has text documents or mixed file types)\n")
+			isDataAnalysisFlow = false
+		}
+	} else {
+		log.Printf("[Chat] Step 1.1: No file filter - Using RAG flow (default)\n")
+		isDataAnalysisFlow = false
+	}
+
+	// Branch: Data Analyst Flow (CSV/Excel)
+	if isDataAnalysisFlow {
+		handleDataAnalysisFlow(c, &req, dataFilePaths)
+		return
+	}
+
+	// Branch: RAG Flow (PDF/TXT/DOCX or default)
+	// Continue with existing RAG logic below...
+
 	// Step 1.5: Rewrite query if there's history (for better RAG accuracy on follow-up questions)
 	var rewrittenQuery string
 	var err error
@@ -79,8 +139,7 @@ func ChatHandler(c *gin.Context) {
 	limit := 25
 	vectorWeight := 0.7 // 70% vector, 30% text
 
-	// Get file filters from request (if any)
-	fileFilters := req.SelectedFiles
+	// Use file filters (already set above)
 	if len(fileFilters) > 0 {
 		log.Printf("[Chat] Step 3: Filtering by files: %v\n", fileFilters)
 	} else {
@@ -444,4 +503,177 @@ func ChatHandler(c *gin.Context) {
 	// Return false to prevent Gin from writing additional JSON body
 	// Note: In Gin, we don't explicitly return false, we just don't call c.JSON
 	// The streaming response is already sent
+}
+
+// handleDataAnalysisFlow handles chat requests for CSV/Excel files using Data Analyst Agent
+func handleDataAnalysisFlow(c *gin.Context, req *ChatRequest, dataFilePaths map[string]string) {
+	log.Printf("[DataAnalyst] ===== Starting Data Analyst flow =====\n")
+	
+	// Step 1: Get the first data file (for now, we support one file at a time)
+	var filePath string
+	var sourceFileName string
+	
+	if len(dataFilePaths) == 0 {
+		log.Printf("[DataAnalyst] ERROR: No valid file paths found\n")
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "No valid data files found. Please ensure CSV/Excel files are uploaded.",
+		})
+		return
+	}
+	
+	// Get first file (we can extend to support multiple files later)
+	for sourceName, path := range dataFilePaths {
+		filePath = path
+		sourceFileName = sourceName
+		break
+	}
+	
+	log.Printf("[DataAnalyst] Processing file: %s (path: %s)\n", sourceFileName, filePath)
+	
+	// Step 2: Generate file preview (structure + sample data)
+	log.Printf("[DataAnalyst] Step 2: Generating file preview...\n")
+	preview, err := utils.GenerateFilePreview(filePath)
+	if err != nil {
+		log.Printf("[DataAnalyst] ERROR: Failed to generate preview: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to read data file",
+			"message": err.Error(),
+		})
+		return
+	}
+	log.Printf("[DataAnalyst] Step 2: Preview generated (length: %d chars)\n", len(preview))
+	
+	// Step 3: Generate Python code from user query using AI
+	log.Printf("[DataAnalyst] Step 3: Generating Python code from query...\n")
+	pythonCode, err := utils.GenerateAnalysisCode(req.Question, preview)
+	if err != nil {
+		log.Printf("[DataAnalyst] ERROR: Failed to generate code: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to generate analysis code",
+			"message": err.Error(),
+		})
+		return
+	}
+	log.Printf("[DataAnalyst] Step 3: Generated code: %s\n", pythonCode)
+	
+	// Step 4: Validate generated code
+	log.Printf("[DataAnalyst] Step 4: Validating generated code...\n")
+	if err := utils.ValidatePythonCode(pythonCode); err != nil {
+		log.Printf("[DataAnalyst] ERROR: Code validation failed: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Generated code contains unsafe operations",
+			"message": err.Error(),
+			"code":    pythonCode,
+		})
+		return
+	}
+	log.Printf("[DataAnalyst] Step 4: Code validation passed\n")
+	
+	// Step 5: Execute Python code
+	log.Printf("[DataAnalyst] Step 5: Executing Python code...\n")
+	result, err := utils.RunPythonAnalysis(filePath, pythonCode)
+	if err != nil {
+		log.Printf("[DataAnalyst] ERROR: Code execution failed: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to execute analysis",
+			"message": err.Error(),
+			"code":    pythonCode,
+		})
+		return
+	}
+	log.Printf("[DataAnalyst] Step 5: Execution successful. Result: %s\n", result)
+	
+	// Step 6: Format response (optional: use AI to format the answer)
+	// For now, we'll return the raw result. Can be enhanced later with AI formatting.
+	formattedResponse := result
+	if formattedResponse == "" {
+		formattedResponse = "Tidak ada hasil yang ditemukan."
+	}
+	
+	// Step 7: Handle session persistence (same as RAG flow)
+	var currentSessionID int
+	if req.SessionID != nil && *req.SessionID > 0 {
+		currentSessionID = *req.SessionID
+		log.Printf("[DataAnalyst] Using existing session ID: %d\n", currentSessionID)
+		
+		if err := db.SaveMessage(currentSessionID, "user", req.Question); err != nil {
+			log.Printf("[DataAnalyst] WARNING: Failed to save user message: %v\n", err)
+		}
+	} else {
+		title := req.Question
+		if len(title) > 30 {
+			title = title[:30] + "..."
+		}
+		if title == "" {
+			title = "Data Analysis"
+		}
+		
+		newSessionID, err := db.CreateSession(title)
+		if err != nil {
+			log.Printf("[DataAnalyst] WARNING: Failed to create session: %v\n", err)
+			currentSessionID = 0
+		} else {
+			currentSessionID = newSessionID
+			log.Printf("[DataAnalyst] Created new session ID: %d\n", currentSessionID)
+			
+			if err := db.SaveMessage(currentSessionID, "user", req.Question); err != nil {
+				log.Printf("[DataAnalyst] WARNING: Failed to save user message: %v\n", err)
+			}
+		}
+	}
+	
+	// Step 8: Send response (using SSE format for consistency with RAG flow)
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	
+	// Send metadata event
+	sourcesData := map[string]interface{}{
+		"sources":   []string{sourceFileName},
+		"type":      "metadata",
+		"analysis":  true, // Flag to indicate this is data analysis, not RAG
+		"code":      pythonCode,
+	}
+	if currentSessionID > 0 {
+		sourcesData["sessionId"] = currentSessionID
+	}
+	sourcesJSON, _ := json.Marshal(sourcesData)
+	fmt.Fprintf(c.Writer, "event: metadata\ndata: %s\n\n", sourcesJSON)
+	c.Writer.Flush()
+	
+	// Send result as chunks (split by newlines for better streaming)
+	lines := strings.Split(formattedResponse, "\n")
+	for _, line := range lines {
+		if line != "" {
+			chunkData := map[string]string{
+				"chunk": line + "\n",
+				"type":  "chunk",
+			}
+			chunkJSON, _ := json.Marshal(chunkData)
+			fmt.Fprintf(c.Writer, "data: %s\n\n", chunkJSON)
+			c.Writer.Flush()
+		}
+	}
+	
+	// Save AI response to database
+	if currentSessionID > 0 {
+		if err := db.SaveMessage(currentSessionID, "model", formattedResponse); err != nil {
+			log.Printf("[DataAnalyst] WARNING: Failed to save AI message: %v\n", err)
+		}
+	}
+	
+	// Send completion event
+	completeData := map[string]interface{}{
+		"type":        "done",
+		"fullLength":  len(formattedResponse),
+		"analysis":    true,
+	}
+	if currentSessionID > 0 {
+		completeData["sessionId"] = currentSessionID
+	}
+	completeJSON, _ := json.Marshal(completeData)
+	fmt.Fprintf(c.Writer, "event: done\ndata: %s\n\n", completeJSON)
+	c.Writer.Flush()
+	
+	log.Printf("[DataAnalyst] ===== Data Analyst flow completed successfully =====\n")
 }

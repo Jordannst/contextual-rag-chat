@@ -141,6 +141,23 @@ func extractTextFromDocx(filePath string) (string, error) {
 	return clean, nil
 }
 
+// IsDataFile checks if a file extension is a data file (CSV/Excel)
+func IsDataFile(fileName string) bool {
+	ext := strings.ToLower(filepath.Ext(fileName))
+	return ext == ".csv" || ext == ".xlsx" || ext == ".xls"
+}
+
+// IsTextDocument checks if a file extension is a text document (PDF/TXT/DOCX)
+func IsTextDocument(fileName string) bool {
+	ext := strings.ToLower(filepath.Ext(fileName))
+	return ext == ".pdf" || ext == ".txt" || ext == ".docx"
+}
+
+// GetFileExtension returns the file extension in lowercase
+func GetFileExtension(fileName string) string {
+	return strings.ToLower(filepath.Ext(fileName))
+}
+
 // SplitText splits a long text into chunks with overlap
 // chunkSize: maximum characters per chunk
 // overlap: number of characters to overlap between chunks

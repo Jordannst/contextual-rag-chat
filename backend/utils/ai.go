@@ -245,3 +245,102 @@ Standalone Query (tulis ulang pertanyaan menjadi lengkap dan jelas):`, historyTe
 	return rewrittenQuery, nil
 }
 
+// GenerateAnalysisCode generates Python pandas code to answer user's data analysis question
+// userQuery: The question from user (e.g., "Berapa total penjualan?")
+// filePreview: Structure of the data (column names and sample data)
+// Returns: Python code string that can be executed directly
+func GenerateAnalysisCode(userQuery string, filePreview string) (string, error) {
+	ctx := context.Background()
+	keyManager := GetKeyManager()
+
+	// Build prompt for code generation
+	prompt := fmt.Sprintf("Anda adalah Data Analyst Python yang expert dalam Pandas.\n\n" +
+		"Diberikan struktur data berikut:\n%s\n\n" +
+		"Pertanyaan User:\n%s\n\n" +
+		"Instruksi:\n" +
+		"- Tulis kode Python Pandas untuk menjawab pertanyaan user\n" +
+		"- Variable dataframe bernama 'df' SUDAH TERSEDIA (tidak perlu import atau load data)\n" +
+		"- Variable 'pd' (pandas) dan 'np' (numpy) SUDAH TERSEDIA\n" +
+		"- HANYA berikan kode Python yang dapat dieksekusi\n" +
+		"- JANGAN gunakan markdown code blocks\n" +
+		"- JANGAN berikan penjelasan atau komentar\n" +
+		"- LANGSUNG berikan kodenya saja\n" +
+		"- PASTIKAN hasil akhir dicetak menggunakan print()\n" +
+		"- Jika hasil berupa angka, format dengan 2 desimal jika perlu\n" +
+		"- Jika hasil berupa tabel/series, gunakan print() untuk menampilkannya\n\n" +
+		"Contoh output yang BENAR:\n" +
+		"print(df['Total'].sum())\n\n" +
+		"Contoh output yang SALAH (JANGAN SEPERTI INI):\n" +
+		"Jangan pakai markdown wrapper atau triple backticks\n\n" +
+		"Sekarang tulis kode Python untuk menjawab pertanyaan user:", filePreview, userQuery)
+
+	var resp *genai.GenerateContentResponse
+	err := keyManager.ExecuteWithRetry(ctx, func(client *genai.Client) error {
+		// Get the generative model (using Flash for speed)
+		model := client.GenerativeModel("gemini-2.0-flash")
+		
+		// Configure model for code generation
+		model.SetTemperature(0.1) // Low temperature for more deterministic code
+		
+		// Generate response
+		var genErr error
+		resp, genErr = model.GenerateContent(ctx, genai.Text(prompt))
+		if genErr != nil {
+			return genErr
+		}
+		return nil
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed to generate analysis code: %w", err)
+	}
+
+	// Extract text from response
+	if resp.Candidates == nil || len(resp.Candidates) == 0 {
+		return "", fmt.Errorf("no response candidates for code generation")
+	}
+
+	if resp.Candidates[0].Content == nil || len(resp.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf("empty response content for code generation")
+	}
+
+	// Get text from the first part
+	var responseText strings.Builder
+	for _, part := range resp.Candidates[0].Content.Parts {
+		if textPart, ok := part.(genai.Text); ok {
+			responseText.WriteString(string(textPart))
+		}
+	}
+
+	code := strings.TrimSpace(responseText.String())
+	
+	// Clean up code - remove markdown code blocks if AI ignores instruction
+	code = strings.TrimPrefix(code, "```python")
+	code = strings.TrimPrefix(code, "```py")
+	code = strings.TrimPrefix(code, "```")
+	code = strings.TrimSuffix(code, "```")
+	code = strings.TrimSpace(code)
+
+	// Validate that code is not empty
+	if code == "" {
+		return "", fmt.Errorf("generated code is empty")
+	}
+
+	// Validate that code contains print statement
+	if !strings.Contains(code, "print") {
+		// If no print, wrap the code
+		// Try to detect if it's an expression
+		lines := strings.Split(code, "\n")
+		if len(lines) == 1 && !strings.Contains(code, "=") {
+			// Single line without assignment, likely an expression
+			code = fmt.Sprintf("print(%s)", code)
+		} else {
+			// Multiple lines or contains assignment, add print at the end
+			// This is a best-effort approach
+			code = code + "\nprint('Code executed successfully')"
+		}
+	}
+
+	return code, nil
+}
+
