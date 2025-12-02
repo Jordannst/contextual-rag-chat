@@ -1,51 +1,83 @@
 package utils
 
 import (
+	"archive/zip"
+	"bytes"
 	"fmt"
+	"html"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
-
-	"github.com/ledongthuc/pdf"
 )
 
-// ExtractTextFromFile extracts text from PDF or TXT files
+// ExtractTextFromFile extracts text from PDF, TXT, DOCX, CSV, and Excel files
 func ExtractTextFromFile(filePath string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 
 	switch ext {
 	case ".pdf":
-		return extractTextFromPDF(filePath)
+		// Untuk PDF, gunakan processor Python (hybrid approach)
+		return extractTextFromPDFWithPython(filePath)
 	case ".txt":
 		return extractTextFromTXT(filePath)
+	case ".docx":
+		return extractTextFromDocx(filePath)
+	case ".csv", ".xlsx", ".xls":
+		// Untuk data tabular (CSV/Excel), gunakan processor Python
+		return extractTextFromTabularWithPython(filePath)
 	default:
 		return "", fmt.Errorf("unsupported file type: %s", ext)
 	}
 }
 
-// extractTextFromPDF extracts text from PDF file using github.com/ledongthuc/pdf
-func extractTextFromPDF(filePath string) (string, error) {
-	// Open PDF file - returns (*os.File, *Reader, error)
-	file, reader, err := pdf.Open(filePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to open PDF file: %w", err)
-	}
-	defer file.Close()
+// extractTextFromPDFWithPython mengekstrak teks (dan deskripsi gambar) dari PDF
+// dengan memanggil skrip Python backend/scripts/pdf_processor.py.
+func extractTextFromPDFWithPython(filePath string) (string, error) {
+	scriptPath := filepath.Join("scripts", "pdf_processor.py")
 
-	// Get plain text reader from PDF
-	textReader, err := reader.GetPlainText()
-	if err != nil {
-		return "", fmt.Errorf("failed to get plain text from PDF: %w", err)
+	cmd := exec.Command("python", scriptPath, filePath)
+	// Pastikan environment (termasuk GEMINI_API_KEY) diteruskan,
+	// dan paksa output Python ke UTF-8 supaya aman di Windows.
+	env := os.Environ()
+	env = append(env, "PYTHONIOENCODING=utf-8")
+	cmd.Env = env
+
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to run pdf_processor.py: %w (stderr: %s)", err, stderrBuf.String())
 	}
 
-	// Read all text from reader
-	textBytes, err := io.ReadAll(textReader)
-	if err != nil {
-		return "", fmt.Errorf("failed to read text from PDF: %w", err)
+	return stdoutBuf.String(), nil
+}
+
+// extractTextFromTabularWithPython mengekstrak teks naratif dari file CSV/XLS/XLSX
+// dengan memanggil skrip Python backend/scripts/data_processor.py.
+func extractTextFromTabularWithPython(filePath string) (string, error) {
+	scriptPath := filepath.Join("scripts", "data_processor.py")
+
+	cmd := exec.Command("python", scriptPath, filePath)
+	// Teruskan environment dan paksa output Python ke UTF-8
+	env := os.Environ()
+	env = append(env, "PYTHONIOENCODING=utf-8")
+	cmd.Env = env
+
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to run data_processor.py: %w (stderr: %s)", err, stderrBuf.String())
 	}
 
-	return string(textBytes), nil
+	return stdoutBuf.String(), nil
 }
 
 // extractTextFromTXT extracts text from TXT file
@@ -62,6 +94,68 @@ func extractTextFromTXT(filePath string) (string, error) {
 	}
 
 	return string(content), nil
+}
+
+// extractTextFromDocx extracts text from DOCX file by reading main document.xml
+// This treats the DOCX as a ZIP archive and strips XML tags from word/document.xml.
+func extractTextFromDocx(filePath string) (string, error) {
+	r, err := zip.OpenReader(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open DOCX file: %w", err)
+	}
+	defer r.Close()
+
+	var docXML []byte
+	for _, f := range r.File {
+		// Main document content
+		if f.Name == "word/document.xml" {
+			rc, err := f.Open()
+			if err != nil {
+				return "", fmt.Errorf("failed to open DOCX document.xml: %w", err)
+			}
+			defer rc.Close()
+
+			docXML, err = io.ReadAll(rc)
+			if err != nil {
+				return "", fmt.Errorf("failed to read DOCX document.xml: %w", err)
+			}
+			break
+		}
+	}
+
+	if len(docXML) == 0 {
+		return "", fmt.Errorf("document.xml not found in DOCX file")
+	}
+
+	// Remove XML tags with a simple regex and unescape entities.
+	// This is lightweight and good enough for plain text extraction.
+	// Note: This is not a full XML parser, but works well for most docx bodies.
+	re := regexp.MustCompile(`<[^>]+>`)
+	text := re.ReplaceAll(docXML, []byte(" "))
+	text = bytes.ReplaceAll(text, []byte("\r"), []byte("\n"))
+
+	// Collapse multiple spaces/newlines
+	clean := strings.TrimSpace(html.UnescapeString(string(text)))
+	clean = regexp.MustCompile(`\s+`).ReplaceAllString(clean, " ")
+
+	return clean, nil
+}
+
+// IsDataFile checks if a file extension is a data file (CSV/Excel)
+func IsDataFile(fileName string) bool {
+	ext := strings.ToLower(filepath.Ext(fileName))
+	return ext == ".csv" || ext == ".xlsx" || ext == ".xls"
+}
+
+// IsTextDocument checks if a file extension is a text document (PDF/TXT/DOCX)
+func IsTextDocument(fileName string) bool {
+	ext := strings.ToLower(filepath.Ext(fileName))
+	return ext == ".pdf" || ext == ".txt" || ext == ".docx"
+}
+
+// GetFileExtension returns the file extension in lowercase
+func GetFileExtension(fileName string) string {
+	return strings.ToLower(filepath.Ext(fileName))
 }
 
 // SplitText splits a long text into chunks with overlap

@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Geist_Mono } from "next/font/google";
+import { JetBrains_Mono } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
+import AmbientBackground from "@/components/ui/AmbientBackground";
 
 // Google Sans Text fallback to Inter
 const inter = Inter({
@@ -24,6 +26,12 @@ const googleSans = Inter({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -53,8 +61,9 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${googleSans.variable} ${inter.variable} ${geistMono.variable} antialiased bg-neutral-950 transition-colors duration-300`}
+        className={`${googleSans.variable} ${inter.variable} ${geistMono.variable} ${jetbrainsMono.variable} antialiased transition-colors duration-300`}
       >
+        <AmbientBackground />
         {children}
       </body>
     </html>

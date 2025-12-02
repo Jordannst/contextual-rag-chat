@@ -18,11 +18,24 @@ func main() {
 	// Load environment variables with BOM handling
 	utils.LoadEnvWithBOMHandling()
 
+	// Initialize KeyManager early to validate API keys
+	keyManager := utils.GetKeyManager()
+	if !keyManager.IsInitialized() {
+		log.Fatal("ERROR: No valid API keys found. Please set GEMINI_API_KEY or GEMINI_API_KEYS in your .env file")
+	}
+	log.Println("✓ KeyManager initialized successfully")
+
 	// Initialize database connection
 	if err := db.InitDB(); err != nil {
 		log.Fatal("Failed to initialize database:", err)
 	}
 	defer db.CloseDB()
+
+	// Run chat sessions migration if tables don't exist
+	if err := db.RunChatSessionsMigration(); err != nil {
+		log.Printf("Warning: Failed to run chat sessions migration: %v", err)
+		log.Printf("You may need to run migration manually: psql -d your_database -f backend/db/migration_chat_sessions.sql")
+	}
 
 	// Setup router with recovery middleware
 	r := gin.Default()
@@ -63,6 +76,14 @@ func main() {
 
 	// Chat routes
 	routes.ChatRoutes(r)
+
+	// Document management routes (includes file handler)
+	// GetFileHandler handles file serving with pattern matching for timestamped filenames
+	// Files can be accessed via: http://localhost:5000/api/files/filename.pdf
+	routes.DocumentRoutes(r)
+
+	// Session routes (chat history persistence)
+	routes.SessionRoutes(r)
 
 	// Start server
 	port := os.Getenv("PORT")
