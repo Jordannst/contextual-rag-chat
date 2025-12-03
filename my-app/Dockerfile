@@ -1,5 +1,5 @@
 # Multi-stage build untuk Next.js
-FROM node:18-alpine AS deps
+FROM node:20-alpine AS deps
 
 # Install dependencies only when needed
 WORKDIR /app
@@ -7,11 +7,13 @@ WORKDIR /app
 # Copy package files
 COPY package.json package-lock.json* ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies with increased timeout for slow connections
+RUN npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm ci
 
 # Builder stage
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
@@ -25,7 +27,7 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM node:18-alpine AS runner
+FROM node:20-alpine AS runner
 
 WORKDIR /app
 

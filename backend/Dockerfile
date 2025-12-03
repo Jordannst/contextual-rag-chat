@@ -13,15 +13,15 @@ RUN apt-get update && apt-get install -y \
 
 # Install Python dependencies untuk Data Analyst Agent dan OCR
 RUN pip3 install --no-cache-dir --break-system-packages \
-    pandas==2.2.0 \
-    openpyxl==3.1.2 \
-    pymupdf==1.23.8 \
-    pytesseract==0.3.10 \
-    google-generativeai==0.3.2 \
-    pillow==10.2.0 \
-    matplotlib==3.8.2 \
-    seaborn==0.13.0 \
-    numpy==1.26.3
+    pandas \
+    openpyxl \
+    pymupdf \
+    pytesseract \
+    google-generativeai \
+    pillow \
+    matplotlib \
+    seaborn \
+    numpy
 
 # Set working directory
 WORKDIR /app
@@ -52,15 +52,15 @@ RUN apt-get update && apt-get install -y \
 
 # Install Python dependencies (runtime)
 RUN pip3 install --no-cache-dir --break-system-packages \
-    pandas==2.2.0 \
-    openpyxl==3.1.2 \
-    pymupdf==1.23.8 \
-    pytesseract==0.3.10 \
-    google-generativeai==0.3.2 \
-    pillow==10.2.0 \
-    matplotlib==3.8.2 \
-    seaborn==0.13.0 \
-    numpy==1.26.3
+    pandas \
+    openpyxl \
+    pymupdf \
+    pytesseract \
+    google-generativeai \
+    pillow \
+    matplotlib \
+    seaborn \
+    numpy
 
 # Set working directory
 WORKDIR /app
