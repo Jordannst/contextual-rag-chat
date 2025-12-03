@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies untuk Data Analyst Agent dan OCR
-RUN pip3 install --no-cache-dir \
+RUN pip3 install --no-cache-dir --break-system-packages \
     pandas==2.2.0 \
     openpyxl==3.1.2 \
     pymupdf==1.23.8 \
@@ -51,7 +51,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies (runtime)
-RUN pip3 install --no-cache-dir \
+RUN pip3 install --no-cache-dir --break-system-packages \
     pandas==2.2.0 \
     openpyxl==3.1.2 \
     pymupdf==1.23.8 \
