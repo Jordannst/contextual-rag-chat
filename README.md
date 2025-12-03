@@ -251,7 +251,11 @@ This will automatically:
 - Build backend image (Go + Python + Tesseract OCR)
 - Build frontend image (Next.js)
 - Start PostgreSQL with pgvector extension
+- **Auto-initialize database** with migration files (01_extension.sql, 02_schema.sql, 03_indexes_triggers.sql)
 - Configure all dependencies and connections
+
+> [!NOTE]
+> Database auto-initialization only runs when the database is empty (first container creation). If you need to reset the database, use `docker-compose down -v` before starting again.
 
 4. **Access Application**
 
@@ -276,6 +280,7 @@ docker-compose logs -f frontend
 docker-compose down
 
 # Stop and remove volumes (delete database)
+# This will reset the database and trigger auto-initialization on next start
 docker-compose down -v
 
 # Rebuild specific service
@@ -317,8 +322,11 @@ npm install
 
 ```bash
 # Install required Python packages
-pip install pandas openpyxl pymupdf pytesseract pillow google-generativeai matplotlib seaborn numpy
+pip install pandas openpyxl pymupdf pytesseract pillow google-generativeai matplotlib seaborn numpy tabulate
 ```
+
+> [!NOTE]
+> The backend automatically detects the Python command (`python` or `python3`) based on what's available in your system. On Windows, it uses `python`, while on Linux/Docker it uses `python3`.
 
 #### 5. Environment Configuration
 
@@ -344,6 +352,11 @@ PORT=5000
 
 #### 6. Database Initialization
 
+> [!NOTE]
+> If using Docker Compose, database initialization is automatic. Skip this step and proceed to "Start Services".
+
+For manual installation, initialize the database:
+
 ```bash
 cd backend
 
@@ -358,6 +371,11 @@ The migration will create:
 - `documents` table with pgvector support
 - `text_search` column with GIN index for full-text search
 - `chat_sessions` and `chat_messages` tables for conversation persistence
+
+Alternatively, you can manually execute the migration files in order:
+1. `backend/db/01_extension.sql` - Initialize pgvector extension
+2. `backend/db/02_schema.sql` - Create tables
+3. `backend/db/03_indexes_triggers.sql` - Add indexes and triggers
 
 #### 7. Start Services
 
