@@ -1,20 +1,17 @@
 # Enterprise RAG Chatbot
 
-A production-grade Retrieval-Augmented Generation (RAG) system with multimodal document ingestion, hybrid search capabilities, and dynamic code execution for data analysis. Built with Go, Next.js, and Google Gemini AI.
+A production-grade Retrieval-Augmented Generation (RAG) system that combines semantic document search with intelligent code execution for data analysis. The system provides dual processing pipelines: a RAG pipeline for text documents (PDF, TXT, DOCX) using hybrid vector and full-text search, and a Data Analyst Agent pipeline for structured data (CSV, Excel) that dynamically generates and executes Python code for analytical queries. Built with Go, Next.js, PostgreSQL with pgvector, and Google Gemini AI.
 
 ---
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Key Technical Features](#key-technical-features)
 - [System Architecture](#system-architecture)
-- [Technology Stack](#technology-stack)
+- [Key Features](#key-features)
 - [Prerequisites](#prerequisites)
-- [Installation & Setup](#installation--setup)
-  - [Option 1: Docker Compose (Recommended)](#option-1-docker-compose-recommended---easiest)
-  - [Option 2: Manual Installation](#option-2-manual-installation)
+- [Installation & Deployment](#installation--deployment)
 - [Configuration](#configuration)
+- [Usage Guide](#usage-guide)
 - [API Documentation](#api-documentation)
 - [Project Structure](#project-structure)
 - [Development](#development)
@@ -22,87 +19,15 @@ A production-grade Retrieval-Augmented Generation (RAG) system with multimodal d
 
 ---
 
-## Overview
-
-Enterprise RAG Chatbot is a full-stack conversational AI system that combines semantic document search with intelligent code execution. The system supports multiple document types (PDF, TXT, DOCX, CSV, Excel) and provides two distinct processing pipelines:
-
-- **RAG Pipeline**: For text documents (PDF, TXT, DOCX) using hybrid search and semantic retrieval
-- **Data Analyst Pipeline**: For structured data (CSV, Excel) using dynamic Python code generation and execution
-
-The system features automatic file type detection, intelligent query routing, and AI-powered interpretation of technical outputs for enhanced user experience.
-
----
-
-## Key Technical Features
-
-### Hybrid Search Engine
-
-The system implements a sophisticated hybrid search combining vector similarity and full-text search with weighted scoring:
-
-- **Vector Search**: Semantic similarity using pgvector cosine distance (70% weight)
-- **Full-Text Search**: Keyword matching using PostgreSQL tsvector with GIN indexing (30% weight)
-- **Combined Scoring**: Normalized weighted combination: `(1 - vector_distance/2) * 0.7 + text_rank * 0.3`
-- **Re-ranking**: Optional Cohere rerank-multilingual-v3.0 for final result optimization
-- **Fallback Strategy**: Automatic fallback to vector-only search when hybrid search yields no results
-
-**Implementation**: `backend/db/db.go::SearchHybridDocuments()`
-
-### Multimodal Ingestion Pipeline
-
-Hybrid extraction pipeline supporting both native text and scanned documents:
-
-- **Native Text Extraction**: Direct text extraction from PDF/TXT/DOCX using Go libraries
-- **OCR Processing**: Tesseract OCR integration for scanned PDFs with advanced preprocessing:
-  - Matrix scaling (3x) for resolution enhancement (72 DPI → 216 DPI)
-  - Grayscale conversion for noise reduction
-  - Binarization with threshold 150 for text sharpening
-  - PSM 6 configuration for tabular document reading
-  - Multi-language support (English + Indonesian)
-- **Image Analysis**: Gemini Vision API for image description within PDFs
-- **Python Integration**: Subprocess execution of Python scripts for specialized processing
-
-**Implementation**: `backend/scripts/pdf_processor.py`, `backend/utils/document_extractor.go`
-
-### Code Interpreter (Data Analyst Agent)
-
-Dynamic Python code execution system for analytical queries on structured data:
-
-- **AI Code Generation**: Natural language to Python code conversion using Gemini 2.0 Flash
-- **Code Sanitization**: Security validation blocking dangerous operations (file I/O, system commands, imports)
-- **Execution Engine**: Sandboxed Python environment with pandas and numpy access
-- **AI Interpretation**: Technical output conversion to natural language for user-friendly responses
-- **File Preview Generation**: Automatic structure analysis (columns, sample data) for context
-
-**Flow**: Query → Preview → Generate Code → Validate → Execute → Interpret → Stream
-
-**Implementation**: `backend/scripts/code_interpreter.py`, `backend/utils/code_runner.go`, `backend/utils/ai.go::GenerateAnalysisCode()`
-
-### Intelligent Response System
-
-Advanced response generation with context awareness:
-
-- **Streaming Responses**: Server-Sent Events (SSE) for real-time output
-- **Query Rewriting**: Context-aware query expansion using conversation history
-- **Inline Citations**: Source file references integrated into response text
-- **Session Persistence**: Full conversation history with database storage
-- **Model Fallback Chain**: Automatic model switching for high availability
-
-**Implementation**: `backend/utils/chat.go::StreamChatResponse()`, `backend/utils/ai.go::RewriteQuery()`
-
-### Resilience Architecture
-
-Production-grade reliability mechanisms:
-
-- **API Key Rotation**: Automatic key rotation on rate limit errors with multiple key support
-- **Model Fallback Chain**: Sequential model fallback (gemini-2.0-flash → gemini-2.0-flash-001 → gemini-flash-latest → gemini-2.5-flash)
-- **Error Recovery**: Graceful degradation with fallback strategies
-- **Key Management**: Singleton KeyManager with thread-safe rotation
-
-**Implementation**: `backend/utils/key_manager.go`
-
----
-
 ## System Architecture
+
+### Hybrid Backend Architecture
+
+The system employs a hybrid architecture combining Go and Python:
+
+- **Go Backend (Server)**: Handles HTTP requests, database operations, AI API interactions, and orchestrates Python script execution
+- **Python Scripts (Workers)**: Specialized processing modules for PDF/OCR extraction, data analysis, and code interpretation
+- **Communication**: Go backend executes Python scripts via subprocess calls with environment variable passing
 
 ### Data Flow: Document Upload
 
@@ -115,7 +40,7 @@ File Type Detection (Go)
 │  Text Documents (PDF/TXT/DOCX)      │
 │  ┌───────────────────────────────┐   │
 │  │ Extract Text (Go/Python)      │   │
-│  │ → OCR if needed (Tesseract)  │   │
+│  │ → OCR if needed (Tesseract)   │   │
 │  │ → Image Description (Gemini)  │   │
 │  └───────────────────────────────┘   │
 │           ↓                           │
@@ -132,8 +57,8 @@ File Type Detection (Go)
 │  Structured Data (CSV/Excel)         │
 │  ┌───────────────────────────────┐   │
 │  │ Process with Pandas (Python)  │   │
-│  │ → Generate Preview            │   │
-│  │ → Store metadata              │   │
+│  │ → Generate Preview             │   │
+│  │ → Store metadata               │   │
 │  └───────────────────────────────┘   │
 │  (No embedding, processed on-demand) │
 └─────────────────────────────────────┘
@@ -178,218 +103,114 @@ AI Code Generation (Gemini 2.0 Flash)
     ↓
 Code Validation (security check)
     ↓
-Execute Python Code (pandas/numpy)
+Execute Python Code (pandas/numpy/matplotlib/seaborn)
     ↓
-Get Python Output
+Get Python Output (text + chart data)
     ↓
 AI Interpretation (convert technical → natural language)
     ↓
 Stream Interpreted Response (SSE)
 ```
 
-### Component Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Frontend Layer                          │
-│  Next.js 16 (App Router) + React 19 + TypeScript          │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│  │  Chat UI     │  │ Upload UI    │  │  Sidebar     │    │
-│  │  (SSE Client)│  │ (Attachment) │  │ (Sessions)   │    │
-│  └──────┬───────┘  └──────┬───────┘  └──────────────┘    │
-└─────────┼──────────────────┼───────────────────────────────┘
-          │                  │
-          │ HTTP/REST + SSE  │
-          │                  │
-┌─────────▼──────────────────▼───────────────────────────────┐
-│                  Backend Layer (Go/Gin)                    │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  Request Handlers                                   │   │
-│  │  - ChatHandler (RAG + Data Analyst routing)         │   │
-│  │  - UploadHandler (multimodal processing)            │   │
-│  │  - DocumentHandler (CRUD operations)                │   │
-│  │  - SessionHandler (conversation persistence)        │   │
-│  └──────┬──────────────────────────────────────────────┘   │
-│         │                                                   │
-│  ┌──────▼──────────────────────────────────────────────┐   │
-│  │  Business Logic Layer                               │   │
-│  │  ┌──────────────┐  ┌──────────────┐               │   │
-│  │  │  AI Utils     │  │  Document    │               │   │
-│  │  │  - Embeddings │  │  Processor   │               │   │
-│  │  │  - Generation │  │  - Extract   │               │   │
-│  │  │  - Code Gen   │  │  - Chunk     │               │   │
-│  │  │  - Rewrite    │  │  - Preview   │               │   │
-│  │  └──────────────┘  └───────────────┘               │   │
-│  │  ┌──────────────┐  ┌──────────────┐               │   │
-│  │  │  Code Runner │  │  Key Manager │               │   │
-│  │  │  - Execute   │  │  - Rotation  │               │   │
-│  │  │  - Validate  │  │  - Fallback  │               │   │
-│  │  └──────────────┘  └──────────────┘               │   │
-│  └──────┬──────────────────────────────────────────────┘   │
-│         │                                                   │
-│  ┌──────▼──────────────────────────────────────────────┐   │
-│  │  Data Access Layer                                  │   │
-│  │  - Hybrid Search (vector + full-text)               │   │
-│  │  - Vector Storage (pgvector)                        │   │
-│  │  - Session Management                               │   │
-│  └──────┬──────────────────────────────────────────────┘   │
-└─────────┼───────────────────────────────────────────────────┘
-          │
-          │
-┌─────────▼───────────────────────────────────────────────────┐
-│              External Services & Infrastructure              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│  │ Google Gemini│  │  PostgreSQL  │  │   Python     │    │
-│  │ - Embeddings │  │  + pgvector  │  │ - Tesseract  │    │
-│  │ - Generation │  │  - GIN Index │  │ - Pandas     │    │
-│  │ - Vision     │  │  - tsvector  │  │ - PyMuPDF    │    │
-│  └──────────────┘  └──────────────┘  └──────────────┘    │
-│                                                           │
-│  ┌──────────────┐                                        │
-│  │   Cohere     │                                        │
-│  │   Reranking  │                                        │
-│  └──────────────┘                                        │
-└───────────────────────────────────────────────────────────┘
-```
-
 ---
 
-## Technology Stack
+## Key Features
 
-### Backend
+### Hybrid Search Engine
 
-| Component | Technology | Version | Purpose |
-|-----------|-----------|---------|---------|
-| Language | Go | 1.24.1 | High-performance backend |
-| Framework | Gin | 1.9.1 | HTTP web framework |
-| Database | PostgreSQL | 16+ | Primary data store |
-| Vector Extension | pgvector | Latest | Vector similarity search |
-| Database Driver | pgx | v5.7.2 | PostgreSQL driver |
-| AI SDK | google-generative-ai-go | v0.20.1 | Gemini API client |
-| Environment | godotenv | v1.5.1 | Environment variable management |
+Combines vector similarity and full-text search with weighted scoring:
 
-### Frontend
+- **Vector Search**: Semantic similarity using pgvector cosine distance (70% weight)
+- **Full-Text Search**: Keyword matching using PostgreSQL tsvector with GIN indexing (30% weight)
+- **Combined Scoring**: Normalized weighted combination: `(1 - vector_distance/2) * 0.7 + text_rank * 0.3`
+- **Re-ranking**: Optional Cohere rerank-multilingual-v3.0 for final result optimization
+- **Fallback Strategy**: Automatic fallback to vector-only search when hybrid search yields no results
 
-| Component | Technology | Version | Purpose |
-|-----------|-----------|---------|---------|
-| Framework | Next.js | 16.0.5 | React framework with App Router |
-| UI Library | React | 19.2.0 | Component library |
-| Language | TypeScript | ^5 | Type safety |
-| Styling | Tailwind CSS | ^4 | Utility-first CSS |
-| Animations | Framer Motion | ^12.23.24 | Motion library |
-| Markdown | react-markdown | ^10.1.0 | Markdown rendering |
+**Implementation**: `backend/db/db.go::SearchHybridDocuments()`
 
-### Python Scripts
+### Multimodal Ingestion Pipeline
 
-| Library | Purpose |
-|---------|---------|
-| PyMuPDF (fitz) | PDF manipulation and rendering |
-| pytesseract | OCR engine wrapper |
-| Pillow (PIL) | Image processing (grayscale, binarization) |
-| pandas | Data analysis and manipulation |
-| openpyxl | Excel file reading |
-| google-generativeai | Gemini Vision API for image description |
+Hybrid extraction pipeline supporting both native text and scanned documents:
 
-### AI Services
+- **Native Text Extraction**: Direct text extraction from PDF/TXT/DOCX using Go libraries
+- **OCR Processing**: Tesseract OCR integration for scanned PDFs with advanced preprocessing:
+  - Matrix scaling (3x) for resolution enhancement (72 DPI → 216 DPI)
+  - Grayscale conversion for noise reduction
+  - Binarization with threshold 150 for text sharpening
+  - PSM 6 configuration for tabular document reading
+  - Multi-language support (English + Indonesian)
+- **Image Analysis**: Gemini Vision API for image description within PDFs
+- **Python Integration**: Subprocess execution of Python scripts for specialized processing
 
-| Service | Model/Endpoint | Purpose |
-|---------|---------------|---------|
-| Google Gemini | text-embedding-004 | 768-dimensional embeddings |
-| Google Gemini | gemini-2.0-flash | Text generation (primary) |
-| Google Gemini | gemini-2.0-flash-001 | Text generation (fallback 1) |
-| Google Gemini | gemini-flash-latest | Text generation (fallback 2) |
-| Google Gemini | gemini-2.5-flash | Text generation (fallback 3) |
-| Google Gemini | gemini-pro-vision | Image description |
-| Cohere | rerank-multilingual-v3.0 | Document reranking |
+**Implementation**: `backend/scripts/pdf_processor.py`, `backend/utils/document_extractor.go`
 
-### Infrastructure Tools
+### Data Analyst Agent
 
-| Tool | Purpose |
-|------|---------|
-| Tesseract OCR | OCR engine for scanned documents |
-| Docker | Full-stack containerization (backend, frontend, database) |
-| Docker Compose | Multi-container orchestration |
+Dynamic Python code execution system for analytical queries on structured data:
+
+- **AI Code Generation**: Natural language to Python code conversion using Gemini 2.0 Flash
+- **Code Sanitization**: Security validation blocking dangerous operations (file I/O, system commands, restricted imports)
+- **Execution Engine**: Sandboxed Python environment with pandas, numpy, matplotlib, and seaborn access
+- **Chart Visualization**: Automatic chart generation with Base64 encoding for frontend display
+- **AI Interpretation**: Technical output conversion to natural language for user-friendly responses
+- **File Preview Generation**: Automatic structure analysis (columns, sample data) for context
+
+**Flow**: Query → Preview → Generate Code → Validate → Execute → Interpret → Stream
+
+**Implementation**: `backend/scripts/code_interpreter.py`, `backend/utils/code_runner.go`, `backend/utils/ai.go::GenerateAnalysisCode()`
+
+### Resilience Architecture
+
+Production-grade reliability mechanisms:
+
+- **API Key Rotation**: Automatic key rotation on rate limit errors with multiple key support
+- **Model Fallback Chain**: Sequential model fallback (gemini-2.0-flash → gemini-2.0-flash-001 → gemini-flash-latest → gemini-2.5-flash)
+- **Error Recovery**: Graceful degradation with fallback strategies
+- **Key Management**: Singleton KeyManager with thread-safe rotation
+
+**Implementation**: `backend/utils/key_manager.go`
 
 ---
 
 ## Prerequisites
 
-### Option 1: Docker Setup (Recommended)
+> [!IMPORTANT]
+> Docker Desktop (Windows/Mac) or Docker Engine (Linux) is required for the recommended deployment method. All dependencies (Node.js, Go, Python, PostgreSQL, Tesseract OCR) are included in Docker images.
 
-- **Docker Desktop** (Windows/Mac) or **Docker Engine** (Linux)
-- **Docker Compose** v3.8 or newer
+### Required API Keys
 
-All other dependencies (Node.js, Go, Python, PostgreSQL, Tesseract OCR) are included in Docker images.
+> [!IMPORTANT]
+> You must obtain the following API keys before deployment:
+> - **Google Gemini API Key**: Required for embeddings, text generation, and code generation. [Get one here](https://makersuite.google.com/app/apikey)
+> - **Cohere API Key**: Optional, but recommended for document reranking functionality
 
-### Option 2: Manual Setup
+### Manual Installation Prerequisites
 
-- **Node.js** 18+ and npm
+If deploying without Docker, you will need:
+
+- **Node.js** 20+ and npm
 - **Go** 1.24+ ([Download](https://go.dev/dl/))
 - **PostgreSQL** 16+ with pgvector extension
 - **Python** 3.11+ with pip
 - **Tesseract OCR** (for OCR functionality)
 
-### Required API Keys
-
-- **Google Gemini API Key** ([Get one here](https://makersuite.google.com/app/apikey))
-- **Cohere API Key** (optional, for reranking)
-
-### PostgreSQL Setup
-
-**Note**: If using Docker Compose, PostgreSQL with pgvector is automatically configured. Skip this section.
-
-#### Option 1: Docker (Standalone - for Manual Installation)
-
-```bash
-docker run -d \
-  --name rag-chatbot-postgres \
-  -p 5433:5432 \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=your_password \
-  -e POSTGRES_DB=rag_chatbot \
-  pgvector/pgvector:pg16
-```
-
-#### Option 2: Local Installation
-
-1. Install PostgreSQL 16+
-2. Install pgvector extension:
-   ```sql
-   CREATE EXTENSION vector;
-   ```
-
-### Tesseract OCR Setup
-
-**Note**: If using Docker Compose, Tesseract OCR is pre-installed in the backend image. Skip this section.
-
-**Manual Setup (Windows)**:
-
-1. Download Tesseract installer from [GitHub](https://github.com/UB-Mannheim/tesseract/wiki)
-2. Install to default location: `C:\Program Files\Tesseract-OCR\`
-3. Download language data (eng + ind) from [tessdata](https://github.com/tesseract-ocr/tessdata)
-4. Place `.traineddata` files in: `C:\Program Files\Tesseract-OCR\tessdata\`
-
-**Note**: The system auto-detects Tesseract from common installation paths.
+> [!NOTE]
+> For Windows users performing manual installation, Tesseract OCR must be installed separately. Download the installer from [GitHub](https://github.com/UB-Mannheim/tesseract/wiki) and ensure it is added to your system PATH.
 
 ---
 
-## Installation & Setup
+## Installation & Deployment
 
-### Option 1: Docker Compose (Recommended - Easiest)
+### Docker Compose (Recommended)
 
-The fastest way to get the entire system running without manual setup:
-
-#### Prerequisites
-
-- **Docker Desktop** (Windows/Mac) or **Docker Engine** (Linux)
-- **Docker Compose** v3.8 or newer
+The fastest and most reliable deployment method. All services are containerized and pre-configured.
 
 #### Quick Start
 
 1. **Clone Repository**
 
 ```bash
-git clone <https://github.com/Jordannst/contextual-rag-chat.git>
+git clone <repository-url>
 cd ai-rag-chatbot/my-app
 ```
 
@@ -414,11 +235,17 @@ GEMINI_API_KEYS=key1,key2,key3  # Optional: multiple keys for rotation
 COHERE_API_KEY=your_cohere_api_key_here
 ```
 
+> [!IMPORTANT]
+> The `.env` file **MUST** be located in the **project root** (same level as `docker-compose.yml`), **NOT** in the `backend/` folder. Docker Compose reads environment variables from the `.env` file in the root folder when running `docker-compose up`. If the `.env` file is located in the `backend/` folder, Docker will not be able to read the environment variables.
+
 3. **Build and Start All Services**
 
 ```bash
 docker-compose up --build
 ```
+
+> [!TIP]
+> Use the `--build` flag to rebuild images when Dockerfiles or dependencies change. For subsequent starts without changes, you can use `docker-compose up` without the flag.
 
 This will automatically:
 - Build backend image (Go + Python + Tesseract OCR)
@@ -435,11 +262,15 @@ This will automatically:
 #### Docker Commands
 
 ```bash
-# Start in background
+# Start in background (detached mode)
 docker-compose up -d --build
 
 # View logs
 docker-compose logs -f
+
+# View logs for specific service
+docker-compose logs -f backend
+docker-compose logs -f frontend
 
 # Stop services
 docker-compose down
@@ -448,24 +279,18 @@ docker-compose down
 docker-compose down -v
 
 # Rebuild specific service
-docker-compose build backend
+docker-compose build --no-cache backend
 docker-compose up -d backend
 ```
 
-**Note**: All Python dependencies (pandas, matplotlib, seaborn, pytesseract) and Tesseract OCR are pre-installed in the Docker image. No manual installation required.
-
-For detailed Docker documentation, see [README_DOCKER.md](./README_DOCKER.md).
-
----
-
-### Option 2: Manual Installation
+### Manual Installation
 
 For development or custom configuration:
 
 #### 1. Clone Repository
 
 ```bash
-git clone <https://github.com/Jordannst/contextual-rag-chat.git>
+git clone <repository-url>
 cd ai-rag-chatbot/my-app
 ```
 
@@ -481,23 +306,21 @@ go mod download
 go build -o backend.exe main.go
 ```
 
-### 3. Frontend Setup
+#### 3. Frontend Setup
 
 ```bash
 # From project root
 npm install
 ```
 
-### 4. Python Dependencies
-
-**Note**: If using Docker Compose, all Python dependencies are pre-installed. Skip this step.
+#### 4. Python Dependencies
 
 ```bash
 # Install required Python packages
 pip install pandas openpyxl pymupdf pytesseract pillow google-generativeai matplotlib seaborn numpy
 ```
 
-### 5. Environment Configuration
+#### 5. Environment Configuration
 
 Create `.env` file in `backend/` directory:
 
@@ -514,14 +337,12 @@ GEMINI_API_KEYS=key1,key2,key3
 
 # Optional: Cohere API (for reranking)
 COHERE_API_KEY=your_cohere_api_key_here
-# OR multiple keys
-COHERE_API_KEYS=key1,key2
 
 # Server Configuration
 PORT=5000
 ```
 
-### 6. Database Initialization
+#### 6. Database Initialization
 
 ```bash
 cd backend
@@ -538,27 +359,18 @@ The migration will create:
 - `text_search` column with GIN index for full-text search
 - `chat_sessions` and `chat_messages` tables for conversation persistence
 
-### 7. Verify Installation
+#### 7. Start Services
 
-```bash
-# Check available Gemini models
-cd backend
-go run cmd/check-models/main.go
-```
-
-### 8. Start Services
-
-#### Backend Server
+**Backend Server**
 
 ```bash
 cd backend
 go run main.go
-# Or: ./backend.exe
 ```
 
 Server runs on `http://localhost:5000`
 
-#### Frontend Development Server
+**Frontend Development Server**
 
 ```bash
 # From project root
@@ -570,6 +382,26 @@ Frontend runs on `http://localhost:3000`
 ---
 
 ## Configuration
+
+### Environment Variables
+
+The following environment variables can be configured in the `.env` file:
+
+| Variable | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `POSTGRES_USER` | PostgreSQL username | No | `postgres` |
+| `POSTGRES_PASSWORD` | PostgreSQL password | No | `postgres` |
+| `POSTGRES_DB` | PostgreSQL database name | No | `rag_chatbot` |
+| `DATABASE_URL` | Full PostgreSQL connection string (for manual setup) | Yes (manual) | - |
+| `GEMINI_API_KEY` | Google Gemini API key (single key) | Yes | - |
+| `GEMINI_API_KEYS` | Google Gemini API keys (comma-separated, for rotation) | No | - |
+| `COHERE_API_KEY` | Cohere API key for reranking | No | - |
+| `BACKEND_PORT` | Backend server port | No | `5000` |
+| `FRONTEND_PORT` | Frontend server port | No | `3000` |
+| `GIN_MODE` | Gin framework mode (debug/release) | No | `release` |
+
+> [!CAUTION]
+> Never commit the `.env` file to version control. Ensure `.env` is listed in `.gitignore`. The file contains sensitive information including API keys and database credentials.
 
 ### Hybrid Search Configuration
 
@@ -627,6 +459,79 @@ custom_config = r'--oem 3 --psm 6'  # Tesseract PSM mode
 
 ---
 
+## Usage Guide
+
+### Uploading Documents
+
+#### Text Documents (PDF, TXT, DOCX)
+
+1. Click the upload area or drag and drop files
+2. Supported formats: PDF, TXT, DOCX
+3. The system will automatically:
+   - Extract text content
+   - Perform OCR if the PDF is scanned
+   - Generate embeddings
+   - Store in PostgreSQL with pgvector
+
+> [!NOTE]
+> Scanned PDFs are automatically processed with Tesseract OCR. The system detects whether a PDF contains native text or requires OCR processing.
+
+#### Structured Data (CSV, Excel)
+
+1. Upload CSV or Excel files (.csv, .xlsx, .xls)
+2. The system will:
+   - Generate a file preview (columns, sample data)
+   - Store metadata (no embeddings)
+   - Enable Data Analyst Agent queries
+
+### Using RAG Chat (Text Documents)
+
+1. Select uploaded text documents from the document list
+2. Type your question in natural language
+3. The system will:
+   - Perform hybrid search (vector + full-text)
+   - Retrieve relevant chunks
+   - Generate contextual response with citations
+   - Stream response in real-time
+
+**Example Queries**:
+- "What is the main topic of this document?"
+- "Summarize the key points"
+- "What are the requirements mentioned?"
+
+### Using Data Analyst Agent (CSV/Excel)
+
+1. Upload a CSV or Excel file
+2. Select the file in the chat interface
+3. Ask analytical questions in natural language
+
+**Example Queries**:
+- "What is the average price?"
+- "Show me a bar chart of sales by month"
+- "What are the top 5 products by revenue?"
+- "Create a scatter plot of price vs quantity"
+
+#### Chart Visualization
+
+The Data Analyst Agent supports automatic chart generation:
+
+- **Supported Chart Types**: Bar charts, line charts, scatter plots, histograms, heatmaps
+- **Libraries**: matplotlib and seaborn
+- **Output Format**: Base64-encoded PNG images displayed inline in chat
+- **Automatic Formatting**: Charts include titles, axis labels, and proper formatting
+
+**Chart Generation Flow**:
+1. User requests visualization in natural language
+2. AI generates Python code with matplotlib/seaborn
+3. Code is validated for security
+4. Chart is generated and encoded as Base64
+5. Chart is displayed in chat interface alongside AI interpretation
+
+> [!TIP]
+> When requesting charts, be specific about what you want to visualize. For example: "Create a bar chart showing sales by region" is better than "show me a chart".
+
+---
+
 ## API Documentation
 
 ### Base URL
@@ -650,8 +555,6 @@ GET /ping
 }
 ```
 
----
-
 #### Upload Document
 
 ```http
@@ -673,15 +576,6 @@ Content-Type: multipart/form-data
   "chunksCount": 15
 }
 ```
-
-**Error Response:**
-```json
-{
-  "error": "Only PDF, TXT, DOCX, CSV, and Excel (.xlsx, .xls) files are allowed"
-}
-```
-
----
 
 #### Chat (Streaming)
 
@@ -750,28 +644,8 @@ Content-Type: application/json
 }
 ```
 
-**Note**: The endpoint automatically routes to RAG flow (PDF/TXT/DOCX) or Data Analyst flow (CSV/Excel) based on file type detection.
-
----
-
-#### Get Question Suggestions
-
-```http
-GET /api/chat/suggestions
-```
-
-**Response:**
-```json
-{
-  "questions": [
-    "What is the main topic?",
-    "Summarize the key points",
-    "What are the requirements?"
-  ]
-}
-```
-
----
+> [!NOTE]
+> The endpoint automatically routes to RAG flow (PDF/TXT/DOCX) or Data Analyst flow (CSV/Excel) based on file type detection.
 
 #### Get Documents
 
@@ -787,8 +661,6 @@ GET /api/documents
 }
 ```
 
----
-
 #### Delete Document
 
 ```http
@@ -802,37 +674,6 @@ DELETE /api/documents/:filename
   "deletedChunks": 15
 }
 ```
-
----
-
-#### Sync Documents
-
-```http
-POST /api/documents/sync
-```
-
-**Response:**
-```json
-{
-  "message": "Sync complete",
-  "deleted_count": 2,
-  "added_count": 1
-}
-```
-
-**Note**: Syncs database with physical files in `uploads/` directory. Removes orphaned entries and imports new files.
-
----
-
-#### Get File
-
-```http
-GET /api/files/:filename
-```
-
-Serves file from `uploads/` directory with pattern matching for timestamped filenames.
-
----
 
 #### Session Management
 
@@ -877,7 +718,6 @@ ai-rag-chatbot/
 │   │   ├── check-models/        # Model availability checker
 │   │   ├── create-db/           # Database creation
 │   │   ├── migrate/             # Migration runner
-│   │   ├── test-analysis-code-gen/  # Test AI code generation
 │   │   └── test-code-runner/    # Test code execution
 │   │
 │   ├── db/                      # Database layer
@@ -897,9 +737,9 @@ ai-rag-chatbot/
 │   │   └── session.go           # Session struct
 │   │
 │   ├── routes/                  # Route definitions
-│   │   └── routes.go           # Route registration
+│   │   └── routes.go            # Route registration
 │   │
-│   ├── scripts/                 # Python scripts
+│   ├── scripts/                  # Python scripts
 │   │   ├── pdf_processor.py     # PDF + OCR processing
 │   │   ├── data_processor.py    # CSV/Excel to narrative
 │   │   └── code_interpreter.py  # Python code execution
@@ -944,8 +784,7 @@ ai-rag-chatbot/
 ├── tailwind.config.js           # Tailwind configuration
 ├── docker-compose.yml            # Docker Compose orchestration
 ├── .dockerignore                 # Docker ignore patterns
-├── README.md                     # This file
-└── README_DOCKER.md              # Docker setup documentation
+└── README.md                     # This file
 ```
 
 ---
@@ -954,7 +793,7 @@ ai-rag-chatbot/
 
 ### Running in Development
 
-#### Option 1: Docker Compose (Recommended)
+#### Option 1: Docker Compose
 
 ```bash
 # Start all services
@@ -1002,13 +841,6 @@ go run cmd/create-db/main.go
 
 # Run migrations
 go run cmd/migrate/main.go
-```
-
-#### Test Data Analyst Agent
-
-```bash
-cd backend
-go run cmd/test-analysis-code-gen/main.go
 ```
 
 ### Code Style
@@ -1090,6 +922,9 @@ go run cmd/test-analysis-code-gen/main.go
 - Add Tesseract to PATH environment variable
 - Download language data (eng + ind)
 
+> [!NOTE]
+> If using Docker Compose, Tesseract OCR is pre-installed in the backend image. This error only occurs in manual installation.
+
 ### Python Code Execution Fails
 
 **Error**: `failed to execute Python code`
@@ -1123,7 +958,7 @@ go run cmd/test-analysis-code-gen/main.go
 
 ## License
 
-[ ]
+[License information]
 
 ---
 
