@@ -8,6 +8,7 @@ A production-grade Retrieval-Augmented Generation (RAG) system that combines sem
 
 - [System Architecture](#system-architecture)
 - [Key Features](#key-features)
+- [Technology Stack](#technology-stack)
 - [Prerequisites](#prerequisites)
 - [Installation & Deployment](#installation--deployment)
 - [Configuration](#configuration)
@@ -169,6 +170,96 @@ Production-grade reliability mechanisms:
 - **Key Management**: Singleton KeyManager with thread-safe rotation
 
 **Implementation**: `backend/utils/key_manager.go`
+
+---
+
+## Technology Stack
+
+### Backend
+
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| **Go** | 1.24+ | Main backend language, HTTP server, orchestration |
+| **Gin** | v1.9.1 | Web framework for REST API |
+| **pgvector-go** | v0.3.0 | PostgreSQL vector similarity operations |
+| **pgx/v5** | v5.7.2 | PostgreSQL driver and connection pooling |
+| **Google Generative AI Go SDK** | v0.20.1 | Gemini API integration (embeddings, chat, vision) |
+| **Cohere Go SDK** | v2.16.0 | Document reranking API |
+| **godotenv** | v1.5.1 | Environment variable management |
+
+### Frontend
+
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| **Next.js** | 16.0.5 | React framework with App Router |
+| **React** | 19.2.0 | UI library |
+| **TypeScript** | 5+ | Type-safe JavaScript |
+| **Tailwind CSS** | 4+ | Utility-first CSS framework |
+| **@fontsource-variable/inter** | 5.2.8 | Inter font family (self-hosted) |
+| **Framer Motion** | 12.23.24 | Animation library |
+| **Lucide React** | 0.555.0 | Icon library |
+| **React Markdown** | 10.1.0 | Markdown rendering for chat messages |
+
+### Database
+
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| **PostgreSQL** | 16+ | Primary database |
+| **pgvector** | Latest | Vector similarity search extension |
+| **tsvector** | Built-in | Full-text search capabilities |
+
+### Python & Data Processing
+
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| **Python** | 3.11+ | Script execution for OCR and data analysis |
+| **pandas** | Latest | Data manipulation and analysis |
+| **numpy** | Latest | Numerical computing |
+| **matplotlib** | Latest | Data visualization |
+| **seaborn** | Latest | Statistical data visualization |
+| **openpyxl** | Latest | Excel file reading/writing |
+| **pymupdf** | Latest | PDF text extraction |
+| **pytesseract** | Latest | OCR integration |
+| **pillow** | Latest | Image processing |
+| **google-generativeai** | Latest | Gemini API for Python scripts |
+| **tabulate** | Latest | Table formatting for pandas.to_markdown() |
+
+### OCR & Document Processing
+
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| **Tesseract OCR** | Latest | Optical character recognition for scanned documents |
+| **Tesseract Language Packs** | eng, ind | Multi-language OCR support |
+
+### AI Services
+
+| Service | Models/Endpoints | Purpose |
+|---------|------------------|---------|
+| **Google Gemini** | text-embedding-004 | 768-dimensional vector embeddings |
+| **Google Gemini** | gemini-2.0-flash | Primary text generation and code generation |
+| **Google Gemini** | gemini-2.0-flash-001 | Fallback model 1 |
+| **Google Gemini** | gemini-flash-latest | Fallback model 2 |
+| **Google Gemini** | gemini-2.5-flash | Fallback model 3 |
+| **Google Gemini** | gemini-pro-vision | Image description in PDFs |
+| **Cohere** | rerank-multilingual-v3.0 | Document reranking for improved search results |
+
+### Infrastructure & DevOps
+
+| Technology | Purpose |
+|------------|---------|
+| **Docker** | Containerization for backend and frontend |
+| **Docker Compose** | Multi-container orchestration |
+| **Multi-stage Builds** | Optimized Docker image sizes |
+| **Health Checks** | Service availability monitoring |
+
+### Development Tools
+
+| Technology | Purpose |
+|------------|---------|
+| **ESLint** | JavaScript/TypeScript linting |
+| **Go Modules** | Dependency management for Go |
+| **npm** | Package management for Node.js |
+| **pip** | Python package management |
 
 ---
 
