@@ -9,6 +9,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-rag_chatbot}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./backend/db:/docker-entrypoint-initdb.d
     ports:
       - "5432:5432"
     healthcheck:

@@ -21,7 +21,8 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     pillow \
     matplotlib \
     seaborn \
-    numpy
+    numpy \
+    tabulate
 
 # Set working directory
 WORKDIR /app
@@ -60,7 +61,8 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     pillow \
     matplotlib \
     seaborn \
-    numpy
+    numpy \
+    tabulate
 
 # Set working directory
 WORKDIR /app
