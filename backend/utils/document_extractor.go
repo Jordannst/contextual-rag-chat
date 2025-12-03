@@ -13,6 +13,16 @@ import (
 	"strings"
 )
 
+// getPythonCommand detects the available Python command (python or python3)
+// Returns "python" if available, otherwise "python3"
+// This ensures compatibility with both Windows (python) and Linux/Docker (python3)
+func getPythonCommand() string {
+	if _, err := exec.LookPath("python"); err == nil {
+		return "python"
+	}
+	return "python3"
+}
+
 // ExtractTextFromFile extracts text from PDF, TXT, DOCX, CSV, and Excel files
 func ExtractTextFromFile(filePath string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
@@ -38,7 +48,8 @@ func ExtractTextFromFile(filePath string) (string, error) {
 func extractTextFromPDFWithPython(filePath string) (string, error) {
 	scriptPath := filepath.Join("scripts", "pdf_processor.py")
 
-	cmd := exec.Command("python", scriptPath, filePath)
+	pythonCmd := getPythonCommand()
+	cmd := exec.Command(pythonCmd, scriptPath, filePath)
 	// Pastikan environment (termasuk GEMINI_API_KEY) diteruskan,
 	// dan paksa output Python ke UTF-8 supaya aman di Windows.
 	env := os.Environ()
@@ -62,7 +73,8 @@ func extractTextFromPDFWithPython(filePath string) (string, error) {
 func extractTextFromTabularWithPython(filePath string) (string, error) {
 	scriptPath := filepath.Join("scripts", "data_processor.py")
 
-	cmd := exec.Command("python", scriptPath, filePath)
+	pythonCmd := getPythonCommand()
+	cmd := exec.Command(pythonCmd, scriptPath, filePath)
 	// Teruskan environment dan paksa output Python ke UTF-8
 	env := os.Environ()
 	env = append(env, "PYTHONIOENCODING=utf-8")

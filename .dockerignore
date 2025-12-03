@@ -1,0 +1,72 @@
+# Dependencies
+node_modules/
+vendor/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Backend folder (exclude from frontend build)
+backend/
+backend.exe
+test.exe
+
+# Uploads and temporary files
+uploads/
+tmp/
+temp/
+*.log
+*.tmp
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment files (will be mounted as volume)
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test files
+*.test
+*.spec
+coverage/
+.nyc_output/
+
+# Documentation
+README.md
+README_DOCKER.md
+*.md
+docs/
+
+# Docker files (don't copy into container)
+docker-compose.yml
+.dockerignore
+
+# Dockerfile in my-app folder (only copy the one being used)
+my-app/Dockerfile
+

@@ -49,7 +49,7 @@
 @theme inline {
   --color-background: var(--bg-primary);
   --color-foreground: var(--text-body);
-  --font-sans: var(--font-google-sans), var(--font-inter), system-ui, sans-serif;
+  --font-sans: 'Inter Variable', system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-jetbrains-mono), var(--font-geist-mono), 'Courier New', monospace;
 }
 

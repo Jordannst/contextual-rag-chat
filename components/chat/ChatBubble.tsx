@@ -19,6 +19,25 @@ interface ChatBubbleProps {
   isLastMessage?: boolean;
 }
 
+// Helper function to extract chart data from message
+// Returns: { text: string without chart markers, charts: string[] of base64 data }
+const extractCharts = (text: string): { text: string; charts: string[] } => {
+  const chartPattern = /\[CHART_DATA:([^\]]+)\]/g;
+  const charts: string[] = [];
+  let cleanedText = text;
+  
+  // Extract all chart data
+  let match;
+  while ((match = chartPattern.exec(text)) !== null) {
+    charts.push(match[1]);
+  }
+  
+  // Remove chart markers from text
+  cleanedText = cleanedText.replace(chartPattern, '');
+  
+  return { text: cleanedText.trim(), charts };
+};
+
 // Helper function to process message and replace citations with markdown code spans
 // This allows us to use custom code component to style citations
 const processMessageForCitations = (text: string): string => {
@@ -179,88 +198,112 @@ export default function ChatBubble({ message, isUser, timestamp, attachment, sou
           </p>
         ) : (
           <>
-            <div className="prose prose-sm max-w-none prose-invert">
-              <ReactMarkdown
-                components={{
-                  p: ({ children }) => (
-                    <p className="mb-3 last:mb-0 text-[15px] leading-relaxed text-neutral-100">
-                      {children}
-                    </p>
-                  ),
-                  ul: ({ children }) => (
-                    <ul className="list-disc list-inside mb-3 space-y-1.5 text-[15px] text-neutral-100">
-                      {children}
-                    </ul>
-                  ),
-                  ol: ({ children }) => (
-                    <ol className="list-decimal list-inside mb-3 space-y-1.5 text-[15px] text-neutral-100">
-                      {children}
-                    </ol>
-                  ),
-                  li: ({ children }) => (
-                    <li className="ml-2 text-[15px] leading-relaxed">{children}</li>
-                  ),
-                  code: ({ children, className }) => {
-                    // Check if this is a citation (starts with "CITATION:")
-                    const text = String(children);
-                    if (text.startsWith('CITATION:')) {
-                      const fileName = text.replace('CITATION:', '');
-                      // Handle multiple files separated by comma
-                      const fileNames = fileName.split(',').map(f => f.trim());
-                      
-                      return (
-                        <span className="font-mono text-xs text-blue-300 bg-blue-500/10 px-2 py-1 rounded-md inline-flex items-center gap-1">
-                          ({fileNames.map((file, index) => (
-                            <React.Fragment key={index}>
-                              {onViewDocument ? (
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    onViewDocument(file);
-                                  }}
-                                  className="text-blue-300 hover:text-blue-200 hover:underline cursor-pointer transition-colors"
-                                  title={`View ${file}`}
-                                >
-                                  {file}
-                                </button>
-                              ) : (
-                                <span>{file}</span>
-                              )}
-                              {index < fileNames.length - 1 && ', '}
-                            </React.Fragment>
-                          ))})
-                        </span>
-                      );
-                    }
-                    // Regular code block
-                    return (
-                      <code className="bg-neutral-800/60 backdrop-blur-sm px-1.5 py-0.5 rounded text-[13px] font-mono text-neutral-100 border border-white/10">
-                        {children}
-                      </code>
-                    );
-                  },
-                  pre: ({ children }) => (
-                    <pre className="bg-neutral-800/60 backdrop-blur-sm p-3 rounded-xl overflow-x-auto mb-3 text-[13px] font-mono border border-white/10">
-                      {children}
-                    </pre>
-                  ),
-                  strong: ({ children }) => (
-                    <strong className="font-semibold text-neutral-50">{children}</strong>
-                  ),
-                  h1: ({ children }) => (
-                    <h1 className="text-xl font-semibold mb-2 text-neutral-50">{children}</h1>
-                  ),
-                  h2: ({ children }) => (
-                    <h2 className="text-lg font-semibold mb-2 text-neutral-50">{children}</h2>
-                  ),
-                  h3: ({ children }) => (
-                    <h3 className="text-base font-semibold mb-2 text-neutral-50">{children}</h3>
-                  ),
-                }}
-              >
-                {processMessageForCitations(message)}
-              </ReactMarkdown>
-            </div>
+            {(() => {
+              // Extract charts from message
+              const { text: messageText, charts } = extractCharts(message);
+              
+              return (
+                <>
+                  <div className="prose prose-sm max-w-none prose-invert">
+                    <ReactMarkdown
+                      components={{
+                        p: ({ children }) => (
+                          <p className="mb-3 last:mb-0 text-[15px] leading-relaxed text-neutral-100">
+                            {children}
+                          </p>
+                        ),
+                        ul: ({ children }) => (
+                          <ul className="list-disc list-inside mb-3 space-y-1.5 text-[15px] text-neutral-100">
+                            {children}
+                          </ul>
+                        ),
+                        ol: ({ children }) => (
+                          <ol className="list-decimal list-inside mb-3 space-y-1.5 text-[15px] text-neutral-100">
+                            {children}
+                          </ol>
+                        ),
+                        li: ({ children }) => (
+                          <li className="ml-2 text-[15px] leading-relaxed">{children}</li>
+                        ),
+                        code: ({ children, className }) => {
+                          // Check if this is a citation (starts with "CITATION:")
+                          const text = String(children);
+                          if (text.startsWith('CITATION:')) {
+                            const fileName = text.replace('CITATION:', '');
+                            // Handle multiple files separated by comma
+                            const fileNames = fileName.split(',').map(f => f.trim());
+                            
+                            return (
+                              <span className="font-mono text-xs text-blue-300 bg-blue-500/10 px-2 py-1 rounded-md inline-flex items-center gap-1">
+                                ({fileNames.map((file, index) => (
+                                  <React.Fragment key={index}>
+                                    {onViewDocument ? (
+                                      <button
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          onViewDocument(file);
+                                        }}
+                                        className="text-blue-300 hover:text-blue-200 hover:underline cursor-pointer transition-colors"
+                                        title={`View ${file}`}
+                                      >
+                                        {file}
+                                      </button>
+                                    ) : (
+                                      <span>{file}</span>
+                                    )}
+                                    {index < fileNames.length - 1 && ', '}
+                                  </React.Fragment>
+                                ))})
+                              </span>
+                            );
+                          }
+                          // Regular code block
+                          return (
+                            <code className="bg-neutral-800/60 backdrop-blur-sm px-1.5 py-0.5 rounded text-[13px] font-mono text-neutral-100 border border-white/10">
+                              {children}
+                            </code>
+                          );
+                        },
+                        pre: ({ children }) => (
+                          <pre className="bg-neutral-800/60 backdrop-blur-sm p-3 rounded-xl overflow-x-auto mb-3 text-[13px] font-mono border border-white/10">
+                            {children}
+                          </pre>
+                        ),
+                        strong: ({ children }) => (
+                          <strong className="font-semibold text-neutral-50">{children}</strong>
+                        ),
+                        h1: ({ children }) => (
+                          <h1 className="text-xl font-semibold mb-2 text-neutral-50">{children}</h1>
+                        ),
+                        h2: ({ children }) => (
+                          <h2 className="text-lg font-semibold mb-2 text-neutral-50">{children}</h2>
+                        ),
+                        h3: ({ children }) => (
+                          <h3 className="text-base font-semibold mb-2 text-neutral-50">{children}</h3>
+                        ),
+                      }}
+                    >
+                      {processMessageForCitations(messageText)}
+                    </ReactMarkdown>
+                  </div>
+                  
+                  {/* Render charts if any */}
+                  {charts.length > 0 && (
+                    <div className="mt-4 space-y-4">
+                      {charts.map((chartData, index) => (
+                        <div key={index} className="rounded-lg shadow-lg overflow-hidden border border-white/10">
+                          <img
+                            src={`data:image/png;base64,${chartData}`}
+                            alt="Data Visualization"
+                            className="w-full h-auto"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
             
             {/* Sources Section - Only show for AI messages with sources that are actually cited in the message */}
             {usedSources.length > 0 && (
