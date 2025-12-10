@@ -123,6 +123,21 @@ def run_code(df: pd.DataFrame, code: str) -> str:
         plt.close('all')
         buffer.close()
     
+    # Prepare restricted builtins
+    safe_builtins = {
+        "abs": abs, "all": all, "any": any, "ascii": ascii, "bin": bin, "bool": bool,
+        "bytearray": bytearray, "bytes": bytes, "callable": callable, "chr": chr,
+        "complex": complex, "dict": dict, "divmod": divmod, "enumerate": enumerate,
+        "filter": filter, "float": float, "format": format, "frozenset": frozenset,
+        "getattr": getattr, "hasattr": hasattr, "hash": hash, "hex": hex, "id": id,
+        "int": int, "isinstance": isinstance, "issubclass": issubclass, "iter": iter,
+        "len": len, "list": list, "map": map, "max": max, "min": min, "next": next,
+        "object": object, "oct": oct, "ord": ord, "pow": pow, "print": print,
+        "range": range, "repr": repr, "reversed": reversed, "round": round,
+        "set": set, "slice": slice, "sorted": sorted, "str": str, "sum": sum,
+        "tuple": tuple, "type": type, "zip": zip,
+    }
+
     exec_globals = {
         "df": df,
         "pd": pd,
@@ -130,7 +145,7 @@ def run_code(df: pd.DataFrame, code: str) -> str:
         "plt": plt,
         "sns": sns,
         "show_chart": show_chart,
-        "__builtins__": __builtins__,
+        "__builtins__": safe_builtins,
     }
     
     # Capture stdout

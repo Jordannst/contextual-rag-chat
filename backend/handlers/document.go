@@ -47,6 +47,15 @@ func DeleteDocumentHandler(c *gin.Context) {
 		return
 	}
 
+	// Security check: Prevent path traversal
+	if strings.Contains(fileName, "..") || strings.Contains(fileName, "/") || strings.Contains(fileName, "\\") {
+		log.Printf("[Documents] SECURITY ERROR: Invalid filename (path traversal attempt): %s\n", fileName)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid filename",
+		})
+		return
+	}
+
 	log.Printf("[Documents] Deleting document: %s\n", fileName)
 
 	// Step 1: Delete physical file from disk
