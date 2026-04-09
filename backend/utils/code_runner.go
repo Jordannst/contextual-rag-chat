@@ -181,6 +181,16 @@ func ValidatePythonCode(code string) error {
 		"open(",
 		"file(",
 		"input(",
+		"from os",
+		"from sys",
+		"from subprocess",
+		"builtins",
+		"importlib",
+		"pickle",
+		"shutil",
+		"requests",
+		"urllib",
+		"socket",
 	}
 	
 	codeLower := strings.ToLower(code)

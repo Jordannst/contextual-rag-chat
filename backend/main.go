@@ -12,6 +12,9 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/ulule/limiter/v3"
+	mgin "github.com/ulule/limiter/v3/drivers/middleware/gin"
+	"github.com/ulule/limiter/v3/drivers/store/memory"
 )
 
 func main() {
@@ -59,9 +62,26 @@ func main() {
 		})
 	}))
 
+	// Rate Limiting Middleware
+	// Create a rate limiter based on IP address: 100 requests per minute
+	rate, err := limiter.NewRateFromFormatted("100-M")
+	if err != nil {
+		log.Fatal(err)
+	}
+	store := memory.NewStore()
+	instance := limiter.New(store, rate)
+	r.Use(mgin.NewMiddleware(instance))
+
 	// CORS middleware
 	config := cors.DefaultConfig()
-	config.AllowAllOrigins = true
+	// Security improvement: Restrict origins instead of allowing all
+	allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
+	if allowedOrigins != "" {
+		config.AllowOrigins = []string{allowedOrigins}
+	} else {
+		// Default to localhost:3000 for development
+		config.AllowOrigins = []string{"http://localhost:3000"}
+	}
 	config.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
 	config.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "Authorization"}
 	r.Use(cors.New(config))
