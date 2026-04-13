@@ -1,4 +1,4 @@
-# Enterprise RAG Chatbot
+# RAG Chatbot
 
 A production-grade Retrieval-Augmented Generation (RAG) system that combines semantic document search with intelligent code execution for data analysis. The system provides dual processing pipelines: a RAG pipeline for text documents (PDF, TXT, DOCX) using hybrid vector and full-text search, and a Data Analyst Agent pipeline for structured data (CSV, Excel) that dynamically generates and executes Python code for analytical queries. Built with Go, Next.js, PostgreSQL with pgvector, and Google Gemini AI.
 
