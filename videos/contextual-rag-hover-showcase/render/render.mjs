@@ -133,8 +133,10 @@ await appFrame.evaluate(({ files }) => {
         const names = getComputedStyle(a.effect.target).animationName.split(',').map((x) => x.trim());
         if (!names.includes(a.animationName)) { a.cancel(); continue; }
       }
+      // A running animation was started — or restarted/reused by the page (framer-motion does this
+      // for exit animations) — since the previous frame: its clock starts now.
       let s = starts.get(a);
-      if (s === undefined) { s = vt; starts.set(a, s); }
+      if (s === undefined || a.playState === 'running') { s = vt; starts.set(a, s); }
       if (a.playState === 'running') a.pause();
       const ct = vt - s;
       const end = a.effect ? a.effect.getComputedTiming().endTime : Infinity;
@@ -367,7 +369,7 @@ function stageState(t, cam, cur) {
     }
   }
   return {
-    t, cam: tr, dim: 1 - 0.26 * lift, restore: TL.ramp(t, ...TL.RESTORE),
+    t, cam: tr, dim: 1 - 0.26 * lift, veil: TL.ramp(t, ...TL.VEIL), restore: TL.ramp(t, ...TL.RESTORE),
     cursor: { x: sp.x, y: sp.y, scale: cursorScale, opacity: 1 }, ring, chips, caption, marks, extract,
     mouse: sp,
   };

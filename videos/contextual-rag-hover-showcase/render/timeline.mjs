@@ -41,12 +41,12 @@ export const window01 = (t, a, b, c, d) => ramp(t, a, b) * (1 - ramp(t, c, d));
 export const CAMERA = [
   { t0: 0.45, t1: 1.95, to: { anchor: 'uploadCardSelected', fit: 0.2, dy: 34, maxZ: 1.3 }, ease: easeInOutCubic },
   { t0: 3.55, t1: 4.75, to: { anchor: 'chatColumn', z: 1.28, dy: 40 }, ease: easeInOutCubic },
-  { t0: 4.95, t1: 6.15, to: { anchor: 'inputZone', z: 1.95, dy: -70 }, ease: easeInOutCubic },
+  { t0: 4.95, t1: 6.15, to: { anchor: 'inputZone', z: 1.6, dy: -125 }, ease: easeInOutCubic },
   { t0: 8.05, t1: 9.25, to: { anchor: 'qa1', fit: 0.1, maxZ: 2.55 }, ease: easeInOutCubic },
   { t0: 11.85, t1: 13.05, to: { anchor: 'splitView', fit: 0.04 }, ease: easeInOutCubic },
-  { t0: 13.55, t1: 14.75, to: { anchor: 'pdfFocus', fit: 0.08 }, ease: easeInOutCubic },
+  { t0: 13.55, t1: 14.75, to: { anchor: 'pdfFocus', fit: 0.08, dx: 14 }, ease: easeInOutCubic },
   { t0: 16.05, t1: 17.05, to: { anchor: 'splitView', fit: 0.04 }, ease: easeInOutCubic },
-  { t0: 17.55, t1: 18.55, to: { anchor: 'inputZone', z: 1.95, dy: -95 }, ease: easeInOutCubic },
+  { t0: 17.55, t1: 18.55, to: { anchor: 'inputZone', z: 1.6, dy: -140 }, ease: easeInOutCubic },
   { t0: 23.9, t1: 25.0, to: { anchor: 'a2', fit: 0.07 }, ease: easeInOutCubic },
   { t0: 27.85, t1: 29.5, to: { home: true }, ease: easeInOutQuint },
 ];
@@ -148,4 +148,7 @@ export const MARKS = {
 };
 
 export const EXTRACT = { t: 25.2, lift: [25.25, 25.9], drop: [27.05, 27.55], fade: [27.55, 27.8] };
-export const RESTORE = [28.4, 29.25];
+// Loop reset inside the window: the chat dims under a veil in the app's background colour,
+// then the captured opening state fades in on top (no double exposure of the two states).
+export const VEIL = [28.3, 28.75];
+export const RESTORE = [28.7, 29.25];
