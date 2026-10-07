@@ -73,6 +73,11 @@ await context.route(`${MOCK}/api/files/Q3_Report.pdf`, (r) => r.request().resour
   : r.continue());
 await context.route(`${MOCK}/api/files/q3_report_page1.png`, (r) => r.fulfill({ contentType: 'image/png', body: fs.readFileSync(path.join(FIX, 'q3_report_page1.png')) }));
 
+// framer-motion feature-detects WAAPI (Element.prototype.animate) to hardware-accelerate opacity.
+// Those native animations cannot be stepped frame-by-frame from outside without framer ending them
+// early (the PDF panel vanished in one frame on close). Hiding the API makes framer use its JS
+// animation path, which runs on the virtual clock exactly like the rest of the app. Capture-only.
+await context.addInitScript(() => { delete Element.prototype.animate; });
 const T_BASE = new Date('2026-10-07T10:00:00+07:00').getTime();
 await context.clock.install({ time: T_BASE });
 const page = await context.newPage();
@@ -445,11 +450,6 @@ for (let i = 0; i <= lastNeeded; i++) {
     await new Promise((r) => setTimeout(r, 5));
   }
   await advanceTo(t * 1000, 1000 / TL.FPS);
-  if (process.env.DEBUG_PANEL && t > 17.3 && t < 17.75) log(t.toFixed(3), await appFrame.evaluate(() => {
-    const f = [...document.querySelectorAll('iframe[title="Q3_Report.pdf"]')];
-    const m = document.querySelector('main > .lg\\:w-1\\/2, main > [class*="lg:w-1/2"]');
-    return JSON.stringify({ ifr: f.map((e) => Math.round(e.getBoundingClientRect().width)), m: m && m.getAttribute('style'), anims: document.getAnimations().filter((a) => !(a.effect && a.effect.target && a.effect.target.closest && a.effect.target.closest('.fixed'))).map((a) => a.constructor.name + ':' + a.playState + ':' + (a.effect && a.effect.target && a.effect.target.className && String(a.effect.target.className).slice(0, 30))).slice(0, 6) });
-  }));
   st = stageState(t, cam, cur);
   await page.evaluate((s) => window.stage.render(s), st);
   if (i === 0) {
