@@ -1,0 +1,34 @@
+== contextual-rag-showcase-master-1080p60.mp4
+codec_name=h264
+profile=High
+codec_type=video
+width=1920
+height=1080
+pix_fmt=yuv420p
+color_space=bt709
+color_transfer=bt709
+color_primaries=bt709
+r_frame_rate=60/1
+avg_frame_rate=60/1
+nb_read_frames=1800
+nb_streams=1
+duration=30.000000
+size=23586995
+bit_rate=6289865
+== contextual-rag-showcase-web-720p60.mp4
+codec_name=h264
+profile=High
+codec_type=video
+width=1280
+height=720
+pix_fmt=yuv420p
+color_space=bt709
+color_transfer=bt709
+color_primaries=bt709
+r_frame_rate=60/1
+avg_frame_rate=60/1
+nb_read_frames=1800
+nb_streams=1
+duration=30.000000
+size=3928438
+bit_rate=1047583

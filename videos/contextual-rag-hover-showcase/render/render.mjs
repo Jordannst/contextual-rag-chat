@@ -445,6 +445,11 @@ for (let i = 0; i <= lastNeeded; i++) {
     await new Promise((r) => setTimeout(r, 5));
   }
   await advanceTo(t * 1000, 1000 / TL.FPS);
+  if (process.env.DEBUG_PANEL && t > 17.3 && t < 17.75) log(t.toFixed(3), await appFrame.evaluate(() => {
+    const f = [...document.querySelectorAll('iframe[title="Q3_Report.pdf"]')];
+    const m = document.querySelector('main > .lg\\:w-1\\/2, main > [class*="lg:w-1/2"]');
+    return JSON.stringify({ ifr: f.map((e) => Math.round(e.getBoundingClientRect().width)), m: m && m.getAttribute('style'), anims: document.getAnimations().filter((a) => !(a.effect && a.effect.target && a.effect.target.closest && a.effect.target.closest('.fixed'))).map((a) => a.constructor.name + ':' + a.playState + ':' + (a.effect && a.effect.target && a.effect.target.className && String(a.effect.target.className).slice(0, 30))).slice(0, 6) });
+  }));
   st = stageState(t, cam, cur);
   await page.evaluate((s) => window.stage.render(s), st);
   if (i === 0) {

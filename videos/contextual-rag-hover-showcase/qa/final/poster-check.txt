@@ -1,0 +1,2 @@
+poster size 1280 x 720 | first frame 1280 x 720
+mean abs diff (0-255): 1.631 | max: 57

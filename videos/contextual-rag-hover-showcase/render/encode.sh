@@ -4,7 +4,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 MEZZ="${1:-$HERE/out/mezz.mkv}"
-WEB_CRF="${2:-27}"
+WEB_CRF="${2:-20}"
 OUT="$HERE/out"
 COLOR=(-color_primaries bt709 -color_trc bt709 -colorspace bt709 -color_range tv)
 TOYUV="scale=out_color_matrix=bt709:out_range=tv:flags=lanczos+accurate_rnd+full_chroma_int,format=yuv420p"
