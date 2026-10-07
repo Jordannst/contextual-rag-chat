@@ -1,11 +1,10 @@
 {
  "file": "/home/user/contextual-rag-chat/videos/contextual-rag-hover-showcase/out/contextual-rag-showcase-web-720p60.mp4",
  "frames": 1800,
- "moving_frames": 1278,
- "static_frames": 522,
+ "moving_frames": 1293,
+ "static_frames": 507,
  "isolated_duplicate_frames_in_motion": [
   586,
-  588,
   1392,
   1394,
   1396,
@@ -13,8 +12,8 @@
   1435
  ],
  "alternating_dup_windows": 0,
- "luma_min": 13.72,
- "luma_max": 221.48,
+ "luma_min": 13.69,
+ "luma_max": 221.49,
  "luma_jumps_gt6": [
   162,
   717,
@@ -24,7 +23,15 @@
   721,
   722,
   723,
+  724,
+  725,
+  726,
   1049,
+  1050,
+  1051,
+  1052,
+  1053,
+  1054,
   1398,
   1707,
   1708,
@@ -36,17 +43,17 @@
   1714
  ],
  "dark_frames_lt12": [],
- "mad_in_motion_median": 0.7608,
- "mad_in_motion_p95": 8.9536,
- "mad_max": 89.5897,
- "mad_max_frame": 1049,
+ "mad_in_motion_median": 0.7489,
+ "mad_in_motion_p95": 9.1433,
+ "mad_max": 20.9722,
+ "mad_max_frame": 1398,
  "seam": {
-  "last_to_first_mad": 0.3387,
+  "last_to_first_mad": 0.3453,
   "mad_last_frames": [
-   0.0004,
-   0.0007,
-   0.0011,
-   0.002
+   0.0006,
+   0.0009,
+   0.0012,
+   0.0018
   ],
   "mad_first_frames": [
    0.0334,
@@ -57,52 +64,52 @@
  },
  "top_mad_frames": [
   [
-   1049,
-   89.59
-  ],
-  [
    1398,
-   20.991
+   20.972
   ],
   [
-   718,
-   19.564
+   1050,
+   18.067
   ],
   [
-   719,
-   18.535
+   1051,
+   16.715
+  ],
+  [
+   1049,
+   15.794
   ],
   [
    720,
-   17.427
-  ],
-  [
-   717,
-   16.382
-  ],
-  [
-   721,
-   14.429
-  ],
-  [
-   993,
-   13.685
+   15.25
   ],
   [
    722,
-   13.622
+   14.891
+  ],
+  [
+   721,
+   14.238
+  ],
+  [
+   1052,
+   14.058
+  ],
+  [
+   719,
+   13.847
+  ],
+  [
+   993,
+   13.678
   ],
   [
    994,
-   13.42
+   13.457
   ],
   [
    992,
-   13.38
-  ],
-  [
-   995,
-   13.241
+   13.367
   ]
  ]
 }

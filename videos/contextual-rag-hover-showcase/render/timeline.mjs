@@ -150,5 +150,5 @@ export const MARKS = {
 export const EXTRACT = { t: 25.2, lift: [25.25, 25.9], drop: [27.05, 27.55], fade: [27.55, 27.8] };
 // Loop reset inside the window: the chat dims under a veil in the app's background colour,
 // then the captured opening state fades in on top (no double exposure of the two states).
-export const VEIL = [28.3, 28.75];
-export const RESTORE = [28.7, 29.25];
+export const VEIL = [28.3, 28.85];
+export const RESTORE = [28.5, 29.2];
