@@ -1,0 +1,215 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Contextual RAG Chat — showcase stage</title>
+<!--
+  Presentation stage. Served by the renderer at http://localhost:3000/__stage (route interception),
+  so the real app iframe (src="/") is same-origin. Everything here is a pure function of the state
+  object passed to window.stage.render(state) — no CSS transitions, no timers, no will-change.
+-->
+<style>
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #6f7fe0; }
+  * { box-sizing: border-box; }
+  #wall { position: absolute; inset: 0; overflow: hidden; }
+  #wall svg { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+  #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  #win {
+    position: absolute; left: 0; top: 0; width: 1280px; height: 748px;
+    border-radius: 10px; overflow: hidden; background: #0e0e10;
+    box-shadow: 0 0 0 0.6px rgba(255,255,255,0.16), 0 28px 60px rgba(18, 20, 64, 0.42), 0 8px 20px rgba(18, 20, 64, 0.28);
+  }
+  #titlebar {
+    position: absolute; left: 0; top: 0; width: 1280px; height: 28px;
+    background: linear-gradient(#2c2c31, #242428); border-bottom: 1px solid rgba(0,0,0,0.55);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+  }
+  .tl { position: absolute; top: 8px; width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.25); }
+  #title {
+    position: absolute; left: 0; right: 0; top: 0; height: 28px; line-height: 28px; text-align: center;
+    font: 600 12.5px/28px 'Inter', -apple-system, sans-serif; color: #b9b9c2; letter-spacing: 0.1px;
+  }
+  #app { position: absolute; left: 0; top: 28px; width: 1280px; height: 720px; border: 0; display: block; background: #0e0e10; }
+  #restore { position: absolute; left: 0; top: 28px; width: 1280px; height: 720px; opacity: 0; pointer-events: none; }
+  #hl { position: absolute; left: 0; top: 0; width: 1280px; height: 748px; pointer-events: none; }
+  .mark { position: absolute; border-radius: 4px; background: rgba(251, 191, 36, 0.24); box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35); transform-origin: 0 50%; }
+  .ring { position: absolute; border-radius: 8px; box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.85), 0 0 18px rgba(96, 165, 250, 0.35); }
+  #fx { position: absolute; inset: 0; pointer-events: none; }
+  #extract { position: absolute; display: none; transform-origin: 50% 50%; overflow: hidden; }
+  #extract img { display: block; width: 100%; height: 100%; }
+  #chips { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+  .chip {
+    position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px 9px 10px; border-radius: 11px; white-space: nowrap;
+    background: rgba(250, 250, 252, 0.94); color: #1f2230;
+    font: 600 16px/1 'Inter', -apple-system, sans-serif;
+    box-shadow: 0 10px 26px rgba(20, 22, 60, 0.32), 0 0 0 0.5px rgba(0,0,0,0.12);
+  }
+  .doc { width: 26px; height: 32px; border-radius: 4px; position: relative; flex: none; }
+  .doc span { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; font: 800 7.5px/1 'Inter', sans-serif; color: #fff; letter-spacing: 0.3px; }
+  .badge {
+    position: absolute; width: 26px; height: 26px; border-radius: 13px; background: #ef4444; color: #fff;
+    font: 700 14px/26px 'Inter', sans-serif; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  }
+  #cursor { position: absolute; left: 0; top: 0; transform-origin: 0 0; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.35)); }
+  #clickring { position: absolute; left: 0; top: 0; border-radius: 50%; border: 2px solid rgba(255,255,255,0.9); box-shadow: 0 0 0 1px rgba(30,40,90,0.25); }
+  #caption {
+    position: absolute; left: 56px; top: 44px; padding: 11px 20px 12px; border-radius: 12px;
+    background: rgba(16, 18, 32, 0.8); color: #f4f5fb; backdrop-filter: blur(14px) saturate(1.2); font: 600 27px/1.1 'Inter', -apple-system, sans-serif;
+    letter-spacing: -0.2px; box-shadow: 0 8px 24px rgba(10, 12, 40, 0.25), inset 0 0 0 1px rgba(255,255,255,0.08);
+    opacity: 0; white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<div id="wall">
+  <svg viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="g-sky" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#dfe4ff"/>
+        <stop offset="0.45" stop-color="#a9b6f4"/>
+        <stop offset="1" stop-color="#6672d8"/>
+      </linearGradient>
+      <radialGradient id="g-warm" cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stop-color="#ffd3b4" stop-opacity="0.95"/>
+        <stop offset="0.55" stop-color="#ffb8a3" stop-opacity="0.35"/>
+        <stop offset="1" stop-color="#ffb8a3" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="g-a" x1="0" y1="0" x2="1" y2="0.4">
+        <stop offset="0" stop-color="#b9c5ff"/><stop offset="1" stop-color="#8e9cf2"/>
+      </linearGradient>
+      <linearGradient id="g-b" x1="0" y1="0" x2="1" y2="0.3">
+        <stop offset="0" stop-color="#8f82f2"/><stop offset="1" stop-color="#6c63e4"/>
+      </linearGradient>
+      <linearGradient id="g-c" x1="0" y1="0" x2="1" y2="0.2">
+        <stop offset="0" stop-color="#4c4dc6"/><stop offset="1" stop-color="#3a3aa6"/>
+      </linearGradient>
+      <linearGradient id="g-d" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#ffc6a6" stop-opacity="0.0"/>
+        <stop offset="0.35" stop-color="#ffc0a2" stop-opacity="0.55"/>
+        <stop offset="0.8" stop-color="#f7a9c4" stop-opacity="0.45"/>
+        <stop offset="1" stop-color="#f7a9c4" stop-opacity="0.1"/>
+      </linearGradient>
+    </defs>
+    <rect x="-40" y="-40" width="2000" height="1160" fill="url(#g-sky)"/>
+    <g id="w-warm"><ellipse cx="1560" cy="190" rx="760" ry="520" fill="url(#g-warm)"/></g>
+    <g id="w-d"><path fill="url(#g-d)" d="M-140 330 C 360 190, 860 470, 1380 320 S 1900 170, 2060 230 L 2060 330 C 1820 300, 1500 450, 1080 430 S 300 300, -140 430 Z"/></g>
+    <g id="w-a"><path fill="url(#g-a)" opacity="0.78" d="M-140 610 C 300 500, 720 770, 1120 640 S 1800 450, 2060 560 L 2060 1220 L -140 1220 Z"/></g>
+    <g id="w-b"><path fill="url(#g-b)" opacity="0.82" d="M-140 770 C 400 640, 820 910, 1260 790 S 1820 640, 2060 720 L 2060 1220 L -140 1220 Z"/></g>
+    <g id="w-c"><path fill="url(#g-c)" opacity="0.9" d="M-140 915 C 360 830, 920 1030, 1360 940 S 1860 860, 2060 905 L 2060 1220 L -140 1220 Z"/></g>
+  </svg>
+</div>
+
+<div id="world">
+  <div id="win">
+    <div id="titlebar">
+      <div class="tl" style="left:12px;background:#ff5f57"></div>
+      <div class="tl" style="left:32px;background:#febc2e"></div>
+      <div class="tl" style="left:52px;background:#28c840"></div>
+      <div id="title">Contextual RAG Chat</div>
+    </div>
+    <iframe id="app" src="/" title="Contextual RAG Chat"></iframe>
+    <img id="restore" alt="">
+    <div id="hl"></div>
+  </div>
+</div>
+
+<div id="fx">
+  <div id="extract"><img alt=""></div>
+  <div id="chips">
+    <div class="chip" id="chip2"><div class="doc" style="background:#16a34a"><span>CSV</span></div>Monthly_Revenue.csv</div>
+    <div class="chip" id="chip1"><div class="doc" style="background:#dc2626"><span>PDF</span></div>Q3_Report.pdf</div>
+    <div class="badge" id="badge">2</div>
+  </div>
+  <div id="caption"></div>
+  <div id="clickring"></div>
+  <svg id="cursor" width="20" height="26" viewBox="0 0 20 26" xmlns="http://www.w3.org/2000/svg">
+    <path d="M1.5 1.5 L1.5 19.6 L6.1 15.4 L9.2 22.6 L12.4 21.2 L9.4 14.2 L15.6 14.2 Z" fill="#111" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+  </svg>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const world = $('world'), win = $('win'), restore = $('restore'), hl = $('hl');
+  const cursor = $('cursor'), ring = $('clickring'), chips = $('chips'), caption = $('caption');
+  const extract = $('extract'), extractImg = extract.querySelector('img');
+  const wallLayers = ['w-warm', 'w-d', 'w-a', 'w-b', 'w-c'].map($);
+  // Wallpaper drift: every term has a period that divides the 30 s loop, so t=0 and t=30 coincide.
+  const WALL = [
+    { ax: 26, ay: 14, p: 30, ph: 0.0 },
+    { ax: 34, ay: 10, p: 30, ph: 1.3 },
+    { ax: 22, ay: 12, p: 30, ph: 2.4 },
+    { ax: 28, ay: 9, p: 15, ph: 3.6 },
+    { ax: 18, ay: 7, p: 30, ph: 4.7 },
+  ];
+  const markEls = [];
+  function marks(list) {
+    while (markEls.length < list.length) { const d = document.createElement('div'); hl.appendChild(d); markEls.push(d); }
+    markEls.forEach((el, i) => {
+      const m = list[i];
+      if (!m || m.opacity <= 0) { el.style.display = 'none'; return; }
+      el.style.display = 'block';
+      el.className = m.kind === 'ring' ? 'ring' : 'mark';
+      el.style.left = m.x + 'px'; el.style.top = m.y + 'px';
+      el.style.width = m.w + 'px'; el.style.height = m.h + 'px';
+      el.style.opacity = m.opacity;
+      el.style.transform = m.kind === 'ring' ? 'none' : `scaleX(${m.grow ?? 1})`;
+    });
+  }
+  window.stage = {
+    setRestore(src) { restore.src = src; return new Promise((r) => (restore.complete ? r() : (restore.onload = r))); },
+    setExtract(src) { extractImg.src = src; return new Promise((r) => (extractImg.complete ? r() : (extractImg.onload = r))); },
+    render(s) {
+      const t = s.t;
+      WALL.forEach((w, i) => {
+        const a = 2 * Math.PI * (t / w.p) + w.ph;
+        wallLayers[i].setAttribute('transform', `translate(${(w.ax * Math.sin(a)).toFixed(3)} ${(w.ay * Math.cos(a)).toFixed(3)})`);
+      });
+      const c = s.cam;
+      world.style.transform = `translate(${c.tx}px, ${c.ty}px) scale(${c.s})`;
+      world.style.filter = s.dim && s.dim < 0.999 ? `brightness(${s.dim})` : 'none';
+      restore.style.opacity = s.restore || 0;
+      marks(s.marks || []);
+      // file chips (screen space)
+      if (s.chips && s.chips.opacity > 0) {
+        chips.style.display = 'block';
+        chips.style.opacity = s.chips.opacity;
+        chips.style.transform = `translate(${s.chips.x}px, ${s.chips.y}px) scale(${s.chips.scale})`;
+        $('chip1').style.transform = `translate(${s.chips.fan * 0}px, 0px) rotate(${-2 * s.chips.fan}deg)`;
+        $('chip2').style.transform = `translate(${14 * s.chips.fan}px, ${12 * s.chips.fan}px) rotate(${3 * s.chips.fan}deg)`;
+        $('badge').style.transform = `translate(${-14}px, ${-14}px)`;
+      } else chips.style.display = 'none';
+      // caption
+      if (s.caption && s.caption.opacity > 0) {
+        if (caption.textContent !== s.caption.text) caption.textContent = s.caption.text;
+        caption.style.opacity = s.caption.opacity;
+        caption.style.transform = `translateY(${s.caption.dy || 0}px)`;
+      } else caption.style.opacity = 0;
+      // extracted result card
+      const e = s.extract;
+      if (e && e.visible) {
+        extract.style.display = 'block';
+        extract.style.left = e.x + 'px'; extract.style.top = e.y + 'px';
+        extract.style.width = e.w + 'px'; extract.style.height = e.h + 'px';
+        extract.style.borderRadius = e.radius + 'px';
+        extract.style.opacity = e.opacity;
+        extract.style.transform = `translateY(${e.dy}px) scale(${e.scale})`;
+        extract.style.boxShadow = `0 ${10 + 30 * e.lift}px ${20 + 60 * e.lift}px rgba(8, 10, 40, ${0.15 + 0.35 * e.lift})`;
+      } else extract.style.display = 'none';
+      // cursor + click ring
+      const k = s.cursor;
+      cursor.style.opacity = k.opacity;
+      cursor.style.transform = `translate(${k.x}px, ${k.y}px) translate(-1.5px, -1.5px) scale(${k.scale})`;
+      if (s.ring && s.ring.opacity > 0) {
+        ring.style.display = 'block';
+        ring.style.width = ring.style.height = 2 * s.ring.r + 'px';
+        ring.style.transform = `translate(${s.ring.x - s.ring.r}px, ${s.ring.y - s.ring.r}px)`;
+        ring.style.opacity = s.ring.opacity;
+      } else ring.style.display = 'none';
+    },
+  };
+})();
+</script>
+</body>
+</html>

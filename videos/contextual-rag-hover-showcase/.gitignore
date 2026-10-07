@@ -1,0 +1,9 @@
+node_modules/
+out/mezz*.mkv
+qa/stills-*/
+qa/dbg/
+qa/logs/
+qa/error.png
+qa/*.mkv
+render/last-run-network.json
+qa/sheet-v*.png

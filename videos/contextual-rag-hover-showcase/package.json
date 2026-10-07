@@ -1,0 +1,9 @@
+{
+  "name": "contextual-rag-hover-showcase",
+  "private": true,
+  "type": "module",
+  "description": "Motion showcase tooling (mock API, stage, deterministic renderer). Not part of the app.",
+  "dependencies": {
+    "playwright": "1.56.1"
+  }
+}
