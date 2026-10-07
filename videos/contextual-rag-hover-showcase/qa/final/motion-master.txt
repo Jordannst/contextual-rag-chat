@@ -1,0 +1,58 @@
+{
+ "file": "/home/user/contextual-rag-chat/videos/contextual-rag-hover-showcase/out/contextual-rag-showcase-master-1080p60.mp4",
+ "frames": 1800,
+ "moving_frames": 1365,
+ "static_frames": 435,
+ "isolated_duplicate_frames_in_motion": [
+  586,
+  1392,
+  1394,
+  1396,
+  1432
+ ],
+ "alternating_dup_windows": 0,
+ "luma_min": 19.64,
+ "luma_max": 221.6,
+ "luma_jumps_gt6": [
+  162,
+  717,
+  718,
+  719,
+  720,
+  721,
+  722,
+  723,
+  724,
+  725,
+  1049,
+  1050,
+  1051,
+  1052,
+  1053,
+  1054,
+  1398,
+  1713,
+  1714
+ ],
+ "dark_frames_lt12": [],
+ "mad_in_motion_median": 0.6585,
+ "mad_in_motion_p95": 9.0384,
+ "mad_max": 21.0322,
+ "mad_max_frame": 1398,
+ "seam": {
+  "last_to_first_mad": 0.1926,
+  "mad_last_frames": [
+   0.0003,
+   0.0001,
+   0.0001,
+   0.0001
+  ],
+  "mad_first_frames": [
+   0.0139,
+   0.0031,
+   0.0012,
+   0.0026
+  ]
+ }
+}
+top MAD frames: [[1398, 21.032], [1050, 18.419], [1051, 16.751], [1049, 15.575], [720, 15.308], [722, 14.887], [721, 14.557], [1052, 14.064], [719, 13.947], [993, 13.709], [994, 13.506], [992, 13.38]]
