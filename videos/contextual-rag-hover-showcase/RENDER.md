@@ -9,10 +9,10 @@ renderer drives the real production build of the app against a local demo API.
 | --- | --- | --- |
 | Node.js / npm | 22.22.0 / 10.9.4 | App build, mock API, renderer |
 | Next.js (repo) | 16.0.5 | `next build` + `next start` of the real app |
-| Playwright + Chromium | 1.56.1 (Chromium 141, `channel: 'chromium'`, new headless) | App automation + frame capture |
-| ffmpeg / libx264 | system build | Mezzanine + deliverable encodes |
-| Python 3 + reportlab, numpy, Pillow | — | PDF fixture, QA analysis, contact sheets |
-| poppler `pdftoppm` | — | Raster of the PDF fixture (capture fallback) |
+| Playwright + Chromium | 1.56.1 / Chromium 141.0.7390.37 (`channel: 'chromium'`, new headless) | App automation + frame capture |
+| ffmpeg / libx264 | 6.1.1 (Ubuntu build) | Mezzanine + deliverable encodes |
+| Python 3 + reportlab, numpy, Pillow | 5.0.1 / 2.5.3 / 12.3.0 | PDF fixture, QA analysis, contact sheets |
+| poppler `pdftoppm` | 24.02.0 | Raster of the PDF fixture (capture fallback) |
 
 ## 1. Install and build (repo root)
 
@@ -60,10 +60,24 @@ Run a stills pass first when the timeline or the app layout changed: camera targ
 `render/anchors.json`, which every run rewrites with fresh measurements (the log prints
 `anchors changed vs file: none` once converged).
 
+### Re-capturing only a range
+
+The renderer always replays the app from frame 0 (state must be identical), but captures only the
+requested range. The final ending was re-captured and spliced like this:
+
+```bash
+node render/render.mjs --out qa/tail.mkv --from 28.0 --to 30
+ffmpeg -i out/mezz.mkv -i qa/tail.mkv -filter_complex \
+  "[0:v]trim=end_frame=1680,setpts=PTS-STARTPTS[a];[1:v]setpts=PTS-STARTPTS[b];[a][b]concat=n=2:v=1[v]" \
+  -map "[v]" -c:v libx264rgb -qp 0 -preset ultrafast -r 60 out/mezz-final.mkv && mv out/mezz-final.mkv out/mezz.mkv
+```
+
+Timing: ~45 min for a full 1800-frame render in this 4-core, GPU-less container.
+
 ## 5. Encode deliverables
 
 ```bash
-render/encode.sh out/mezz.mkv 27
+render/encode.sh out/mezz.mkv 20
 ```
 
 Writes `out/contextual-rag-showcase-master-1080p60.mp4`, `out/contextual-rag-showcase-web-720p60.mp4`
@@ -72,8 +86,7 @@ and `out/poster-first-frame.jpg` (first frame of the web file).
 ## 6. QA
 
 ```bash
-python3 render/qa_motion.py out/contextual-rag-showcase-web-720p60.mp4 qa/motion-web.json
-python3 render/sheet.py qa/stills qa/sheet.png --width 640
+render/qa_final.sh        # metadata, faststart, motion/seam, 3x loop, 480/360 px sheets, poster check -> qa/final/
 ```
 
 See `REPORT.md` for the checks that were run and their results.
