@@ -47,9 +47,8 @@ export const CAMERA = [
   { t0: 13.55, t1: 14.75, to: { anchor: 'pdfFocus', fit: 0.08 }, ease: easeInOutCubic },
   { t0: 16.05, t1: 17.05, to: { anchor: 'splitView', fit: 0.04 }, ease: easeInOutCubic },
   { t0: 17.55, t1: 18.55, to: { anchor: 'inputZone', z: 1.95, dy: -95 }, ease: easeInOutCubic },
-  { t0: 21.9, t1: 23.0, to: { anchor: 'qa2text', fit: 0.12, maxZ: 2.3 }, ease: easeInOutCubic },
-  { t0: 23.4, t1: 24.6, to: { anchor: 'a2', fit: 0.07 }, ease: easeInOutCubic },
-  { t0: 27.55, t1: 29.35, to: { home: true }, ease: easeInOutQuint },
+  { t0: 23.9, t1: 25.0, to: { anchor: 'a2', fit: 0.07 }, ease: easeInOutCubic },
+  { t0: 27.85, t1: 29.5, to: { home: true }, ease: easeInOutQuint },
 ];
 
 // ---- Cursor ---------------------------------------------------------------------------------
@@ -74,7 +73,7 @@ export const MOVES = [
   { t0: 19.35, t1: 19.72, to: { live: 'textarea', fx: 0.62 }, bend: -0.1 },
   { t0: 21.38, t1: 21.74, to: { live: 'sendBtn' }, bend: 0.12 },
   { t0: 22.02, t1: 22.82, to: { live: 'restSpot3' }, bend: -0.12 },
-  { t0: 27.8, t1: 29.45, to: { home: true }, bend: 0.1 },
+  { t0: 27.95, t1: 29.55, to: { home: true }, bend: 0.1 },
 ];
 
 export const CLICKS = [2.62, 4.82, 5.4, 5.98, 8.0, 11.8, 17.38, 18.27, 18.76, 19.22, 19.82, 21.84];
@@ -121,11 +120,10 @@ export const ACTIONS = [
   { t: 22.44, type: 'release', expect: 'text:Rp186 million' },
   { t: 22.68, type: 'release', expect: 'text:Revenue rose' },
   { t: 22.92, type: 'release', expect: 'text:from July to September' },
-  { t: 22.95, type: 'measure', names: ['qa2text'] },
   { t: 23.3, type: 'release', expect: 'chart' },
   { t: 23.42, type: 'release', expect: 'idle' },
-  { t: 24.6, type: 'measure', names: ['a2'] },
-  { t: 25.0, type: 'extract', anchor: 'a2' },
+  { t: 23.86, type: 'measure', names: ['a2'] },
+  { t: 25.2, type: 'extract', anchor: 'a2' },
 ];
 
 // ---- Presentation layers ----------------------------------------------------------------------
@@ -149,5 +147,5 @@ export const MARKS = {
   pdf: { out: [16.0, 16.45] },
 };
 
-export const EXTRACT = { t: 25.0, lift: [25.05, 25.7], drop: [26.95, 27.45], fade: [27.45, 27.7] };
-export const RESTORE = [28.25, 29.15];
+export const EXTRACT = { t: 25.2, lift: [25.25, 25.9], drop: [27.05, 27.55], fade: [27.55, 27.8] };
+export const RESTORE = [28.4, 29.25];

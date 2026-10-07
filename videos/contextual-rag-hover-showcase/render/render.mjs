@@ -48,6 +48,8 @@ const lastNeeded = Math.max(OUT ? LAST_FRAME - 1 : 0, ...[...stillFrames]);
 const fileAnchors = fs.existsSync(ANCHORS_FILE) ? JSON.parse(fs.readFileSync(ANCHORS_FILE, 'utf8')) : {};
 const anchors = { ...fileAnchors }; // camera reads these; live measurements refresh them
 const measured = {};
+// persist measured anchors (early camera targets need them before they exist in a run)
+const saveAnchors = () => fs.writeFileSync(ANCHORS_FILE, JSON.stringify({ ...fileAnchors, ...measured }, null, 1));
 const log = (...a) => console.log(`[render]`, ...a);
 
 // ---- Browser & stage ------------------------------------------------------------------------
@@ -255,11 +257,14 @@ function resolveCam(to) {
   if (z > 1.0001) { cx = fit(cx, hw, TL.WIN_W); cy = fit(cy, hh, TL.WIN_H); } else { cx = TL.HOME.cx; cy = TL.HOME.cy; }
   return { cx, cy, z };
 }
-const camTargets = TL.CAMERA.map((seg) => resolveCam(seg.to));
+// targets resolve when their segment starts (live measurements from earlier in this run win)
+const camTargets = [];
 function cameraAt(t) {
   let cur = { ...TL.HOME };
   for (let k = 0; k < TL.CAMERA.length; k++) {
-    const seg = TL.CAMERA[k], to = camTargets[k] || cur;
+    const seg = TL.CAMERA[k];
+    if (t > seg.t0 && camTargets[k] === undefined) camTargets[k] = resolveCam(seg.to);
+    const to = camTargets[k] || cur;
     if (t >= seg.t1) { cur = to; continue; }
     if (t > seg.t0) {
       const u = seg.ease((t - seg.t0) / (seg.t1 - seg.t0));
@@ -421,9 +426,10 @@ for (let i = 0; i <= lastNeeded; i++) {
       await waitFor(a.expect);
       await new Promise((r) => setTimeout(r, 25));
     } else if (a.type === 'measure') {
-      for (const n of a.names) { measured[n] = await measure(n); anchors[n] = anchors[n] || measured[n]; }
+      for (const n of a.names) { measured[n] = await measure(n); if (measured[n]) anchors[n] = measured[n]; }
+      saveAnchors();
     } else if (a.type === 'extract') {
-      const r = anchors[a.anchor];
+      const r = await measure(a.anchor); // live, at the exact capture frame
       if (!r) throw new Error(`extract: anchor ${a.anchor} missing`);
       const tr = TL.camToTransform(cam);
       const p = TL.toScreen(tr, r);
@@ -431,7 +437,7 @@ for (let i = 0; i <= lastNeeded; i++) {
       extractRect = { x, y, w: Math.ceil(p.x + r.w * tr.s) - x, h: Math.ceil(p.y + r.h * tr.s) - y, s: tr.s };
       st = stageState(t, cam, cur);
       await page.evaluate((s) => window.stage.render({ ...s, extract: null }), st);
-      const png = await shot(extractRect);
+      const png = await shot({ x: extractRect.x, y: extractRect.y, width: extractRect.w, height: extractRect.h });
       await page.evaluate((src) => window.stage.setExtract(src), 'data:image/png;base64,' + png.toString('base64'));
     }
     await new Promise((r) => setTimeout(r, 5));
@@ -453,9 +459,7 @@ for (let i = 0; i <= lastNeeded; i++) {
 }
 if (ff) { ff.stdin.end(); await new Promise((r) => ff.on('close', r)); }
 
-// persist anchors measured in this run (camera uses them on the next run)
-const merged = { ...fileAnchors, ...measured };
-fs.writeFileSync(ANCHORS_FILE, JSON.stringify(merged, null, 1));
+saveAnchors();
 const changed = Object.keys(measured).filter((k) => JSON.stringify(measured[k]) !== JSON.stringify(fileAnchors[k]));
 log('anchors changed vs file:', changed.length ? changed.join(', ') : 'none');
 const mockLog = await (await fetch(`${MOCK}/__mock/log`)).json();
